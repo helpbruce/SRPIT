@@ -21,6 +21,7 @@ interface Character {
   notes: string;
   tasks: Task[];
   caseNumber: string;
+  
 }
 
 interface BestiaryEntry {
