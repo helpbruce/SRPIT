@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
+import { CacheManager } from '../../shared/lib/cache';
 
 interface Task {
   id: string;
@@ -150,17 +151,27 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     };
   }, [isOpen, onClose, isEditing, isEditingBestiary, selectedCharacter, selectedEntry, pdaMode]);
 
-  // Load data from Supabase + realtime подписка
+  // Load data from Supabase + кеш + realtime подписка
   useEffect(() => {
-    // Если Supabase не инициализировался (например, нет env-переменных на Vercel) —
-    // просто выходим, чтобы не ломать клиент.
+    // Если Supabase не инициализировался — пробуем загрузить из кеша
     if (!supabase) {
+      const cachedChars = CacheManager.get<Character[]>('pda_characters');
+      const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
+      if (cachedChars) setCharacters(cachedChars);
+      if (cachedBestiary) setBestiaryEntries(cachedBestiary);
       return;
     }
 
     let isMounted = true;
 
     const loadData = async () => {
+      // Сначала загружаем из кеша для мгновенного отображения
+      const cachedChars = CacheManager.get<Character[]>('pda_characters');
+      const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
+      if (cachedChars && isMounted) setCharacters(cachedChars);
+      if (cachedBestiary && isMounted) setBestiaryEntries(cachedBestiary);
+
+      // Затем загружаем свежие данные из Supabase
       const [charactersRes, bestiaryRes] = await Promise.all([
         supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
         supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
@@ -184,6 +195,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           caseNumber: row.casenumber ?? '',
         }));
         setCharacters(mapped);
+        CacheManager.set('pda_characters', mapped, 10 * 60 * 1000);
       }
 
       if (bestiaryRes.error) {
@@ -200,6 +212,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           anomalyNames: row.anomaly_names ?? [],
         }));
         setBestiaryEntries(mapped);
+        CacheManager.set('bestiary_entries', mapped, 10 * 60 * 1000);
       }
     };
 
@@ -312,6 +325,12 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         updated_at: new Date().toISOString(),
       };
 
+      // Обновляем кеш
+      const updated = isCreating 
+        ? [...characters, editForm]
+        : characters.map(c => c.id === editForm.id ? editForm : c);
+      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+
       supabase
         .from('pda_characters')
         .upsert(payload, { onConflict: 'id' })
@@ -319,6 +338,8 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           if (error) {
             console.error('Failed to upsert pda_character in Supabase:', error);
             alert('Ошибка сохранения: ' + error.message);
+            // Откатываем кеш при ошибке
+            CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
           } else {
             console.log('Character saved successfully');
           }
@@ -333,7 +354,10 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const deleteCharacter = (id: string) => {
     playAllSound();
     if (confirm('Удалить персонажа?')) {
-      setCharacters(prev => prev.filter(c => c.id !== id));
+      const updated = characters.filter(c => c.id !== id);
+      setCharacters(updated);
+      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+      
       if (selectedCharacter?.id === id) {
         setSelectedCharacter(null);
       }
@@ -346,6 +370,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           .then(({ error }) => {
             if (error) {
               console.error('Failed to delete pda_character from Supabase:', error);
+              // Откатываем при ошибке
+              setCharacters(characters);
+              CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
             }
           });
       }
@@ -434,12 +461,13 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (!bestiaryEditForm) return;
 
     const existing = bestiaryEntries.find(e => e.id === bestiaryEditForm.id);
-    if (existing) {
-      setBestiaryEntries(prev => prev.map(e => e.id === bestiaryEditForm.id ? bestiaryEditForm : e));
-      setSelectedEntry(bestiaryEditForm);
-    } else {
-      setBestiaryEntries(prev => [...prev, bestiaryEditForm]);
-    }
+    const updated = existing
+      ? bestiaryEntries.map(e => e.id === bestiaryEditForm.id ? bestiaryEditForm : e)
+      : [...bestiaryEntries, bestiaryEditForm];
+    
+    setBestiaryEntries(updated);
+    setSelectedEntry(bestiaryEditForm);
+    CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
 
     if (supabase) {
       const payload = {
@@ -459,6 +487,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         .then(({ error }) => {
           if (error) {
             console.error('Failed to upsert bestiary_entry in Supabase:', error);
+            // Откатываем при ошибке
+            setBestiaryEntries(bestiaryEntries);
+            CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
           }
         });
     }
@@ -470,7 +501,10 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const deleteBestiaryEntry = (id: string) => {
     playAllSound();
     if (confirm('Удалить запись?')) {
-      setBestiaryEntries(prev => prev.filter(e => e.id !== id));
+      const updated = bestiaryEntries.filter(e => e.id !== id);
+      setBestiaryEntries(updated);
+      CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
+      
       if (selectedEntry?.id === id) {
         setSelectedEntry(null);
       }
@@ -483,6 +517,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           .then(({ error }) => {
             if (error) {
               console.error('Failed to delete bestiary_entry from Supabase:', error);
+              // Откатываем при ошибке
+              setBestiaryEntries(bestiaryEntries);
+              CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
             }
           });
       }

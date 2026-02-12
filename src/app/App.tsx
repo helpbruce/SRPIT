@@ -9,6 +9,7 @@ import { MapModal } from '../features/map/MapModal';
 import { getImagePath } from '../shared/lib/PlaceholderImages';
 import { FolderViewer } from '../features/folder/FolderViewer';
 import { supabase } from '../shared/lib/supabaseClient';
+import { CacheManager } from '../shared/lib/cache';
 
 interface Document {
   url: string;
@@ -50,13 +51,27 @@ export default function App() {
   // Определяем активные блокировки
   const isAnyModalOpen = isUSBOpen || isPDAOpen || isMapOpen || isAddModalOpen || fullscreenIndex !== null;
 
-  // Load documents from Supabase (fallback to empty if Supabase не настроен)
+  // Load documents from Supabase + кеш + realtime
   useEffect(() => {
+    if (!supabase) {
+      // Пробуем загрузить из кеша если Supabase не настроен
+      const cached = CacheManager.get<Document[]>('documents');
+      if (cached) {
+        setDocuments(cached);
+      }
+      return;
+    }
+
     let isMounted = true;
 
     const loadDocuments = async () => {
-      if (!supabase) return;
+      // Сначала загружаем из кеша для мгновенного отображения
+      const cached = CacheManager.get<Document[]>('documents');
+      if (cached && isMounted) {
+        setDocuments(cached);
+      }
 
+      // Затем загружаем свежие данные из Supabase
       const { data, error } = await supabase
         .from('documents')
         .select('id, url')
@@ -69,18 +84,33 @@ export default function App() {
 
       if (!isMounted || !data) return;
 
-      setDocuments(
-        data.map((row) => ({
-          id: row.id as string,
-          url: row.url as string,
-        }))
-      );
+      const mapped = data.map((row) => ({
+        id: row.id as string,
+        url: row.url as string,
+      }));
+
+      setDocuments(mapped);
+      // Сохраняем в кеш
+      CacheManager.set('documents', mapped, 10 * 60 * 1000); // 10 минут
     };
 
     loadDocuments();
 
+    // Realtime подписка
+    const channel = supabase
+      .channel('documents_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'documents' },
+        () => {
+          loadDocuments();
+        }
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -122,7 +152,12 @@ export default function App() {
   const handleConfirmAdd = (url: string) => {
     if (addContext === 'folder') {
       const optimisticId = `doc-${Date.now()}`;
-      setDocuments(prev => [...prev, { url, id: optimisticId }]);
+      const newDoc = { url, id: optimisticId };
+      const updated = [...documents, newDoc];
+      setDocuments(updated);
+      
+      // Обновляем кеш
+      CacheManager.set('documents', updated, 10 * 60 * 1000);
 
       if (supabase) {
         supabase
@@ -131,15 +166,18 @@ export default function App() {
           .then(({ data, error }) => {
             if (error || !data || !data[0]) {
               console.error('Failed to insert document into Supabase:', error);
+              // Откатываем при ошибке
+              setDocuments(documents);
+              CacheManager.set('documents', documents, 10 * 60 * 1000);
               return;
             }
 
             const realId = data[0].id as string;
-            setDocuments(prev =>
-              prev.map(doc =>
-                doc.id === optimisticId ? { ...doc, id: realId } : doc
-              )
+            const finalDocs = documents.map(doc =>
+              doc.id === optimisticId ? { ...doc, id: realId } : doc
             );
+            setDocuments(finalDocs);
+            CacheManager.set('documents', finalDocs, 10 * 60 * 1000);
           });
       }
     } else if (addContext === 'usb') {
@@ -151,11 +189,18 @@ export default function App() {
 
   const handleDeleteDocument = (index: number) => {
     const docToDelete = documents[index];
+    if (!docToDelete) return;
+
+    // Оптимистичное обновление UI
     const newDocs = documents.filter((_, i) => i !== index);
     setDocuments(newDocs);
     setCurrentIndex(Math.min(currentIndex, newDocs.length - 1));
+    
+    // Обновляем кеш
+    CacheManager.set('documents', newDocs, 10 * 60 * 1000);
 
-    if (supabase && docToDelete) {
+    // Удаляем из Supabase
+    if (supabase) {
       supabase
         .from('documents')
         .delete()
@@ -163,6 +208,9 @@ export default function App() {
         .then(({ error }) => {
           if (error) {
             console.error('Failed to delete document from Supabase:', error);
+            // Откатываем изменения при ошибке
+            setDocuments(documents);
+            CacheManager.set('documents', documents, 10 * 60 * 1000);
           }
         });
     }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, ZoomIn, ZoomOut, Hand, Pen, Eraser } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
+import { CacheManager } from '../../shared/lib/cache';
 
 interface Marker {
   id: string;
@@ -82,15 +83,27 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, editingMarker]);
 
-  // Load markers & drawings from Supabase + realtime подписка
+  // Load markers & drawings from Supabase + кеш + realtime подписка
   useEffect(() => {
     if (!supabase) {
+      // Пробуем загрузить из кеша если Supabase не настроен
+      const cachedMarkers = CacheManager.get<Marker[]>('map_markers');
+      const cachedDrawings = CacheManager.get<DrawingPath[]>('map_drawings');
+      if (cachedMarkers) setMarkers(cachedMarkers);
+      if (cachedDrawings) setDrawings(cachedDrawings);
       return;
     }
 
     let isMounted = true;
 
     const load = async () => {
+      // Сначала загружаем из кеша для мгновенного отображения
+      const cachedMarkers = CacheManager.get<Marker[]>('map_markers');
+      const cachedDrawings = CacheManager.get<DrawingPath[]>('map_drawings');
+      if (cachedMarkers && isMounted) setMarkers(cachedMarkers);
+      if (cachedDrawings && isMounted) setDrawings(cachedDrawings);
+
+      // Затем загружаем свежие данные из Supabase
       const [markersRes, drawingsRes] = await Promise.all([
         supabase.from('map_markers').select('id, marker').order('created_at', { ascending: true }),
         supabase.from('map_drawings').select('id, path').order('created_at', { ascending: true }),
@@ -101,23 +114,23 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       if (markersRes.error) {
         console.error('Failed to load map_markers from Supabase:', markersRes.error);
       } else if (markersRes.data) {
-        setMarkers(
-          markersRes.data.map((row: any) => ({
-            ...(row.marker as Marker),
-            id: row.marker.id ?? row.id,
-          }))
-        );
+        const mapped = markersRes.data.map((row: any) => ({
+          ...(row.marker as Marker),
+          id: row.marker.id ?? row.id,
+        }));
+        setMarkers(mapped);
+        CacheManager.set('map_markers', mapped, 10 * 60 * 1000);
       }
 
       if (drawingsRes.error) {
         console.error('Failed to load map_drawings from Supabase:', drawingsRes.error);
       } else if (drawingsRes.data) {
-        setDrawings(
-          drawingsRes.data.map((row: any) => ({
-            ...(row.path as DrawingPath),
-            id: row.path.id ?? row.id,
-          }))
-        );
+        const mapped = drawingsRes.data.map((row: any) => ({
+          ...(row.path as DrawingPath),
+          id: row.path.id ?? row.id,
+        }));
+        setDrawings(mapped);
+        CacheManager.set('map_drawings', mapped, 10 * 60 * 1000);
       }
     };
 
@@ -151,9 +164,9 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     }
   }, [isOpen]);
 
-  // canvas render
+  // canvas render - перерисовывается при изменении drawings, размера окна или открытии карты
   useEffect(() => {
-    if (!canvasRef.current || !mapRef.current) return;
+    if (!canvasRef.current || !mapRef.current || !isOpen) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -165,6 +178,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    // Рисуем все сохранённые рисунки
     drawings.forEach(path => {
       if (path.points.length < 2) return;
 
@@ -190,6 +204,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       ctx.stroke();
     });
 
+    // Рисуем текущий рисунок (во время рисования)
     if (currentPath.length > 1) {
       ctx.strokeStyle = drawColor;
       ctx.lineWidth = drawWidth;
@@ -212,7 +227,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
       ctx.stroke();
     }
-  }, [drawings, currentPath, drawColor, drawWidth]);
+  }, [drawings, currentPath, drawColor, drawWidth, isOpen]);
 
   // wheel zoom
   useEffect(() => {
@@ -285,7 +300,9 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         text: selectedTool === 'text' ? text : undefined,
       };
 
-      setMarkers(prev => [...prev, newMarker]);
+      const updated = [...markers, newMarker];
+      setMarkers(updated);
+      CacheManager.set('map_markers', updated, 10 * 60 * 1000);
 
       if (supabase) {
         supabase
@@ -294,6 +311,8 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           .then(({ error }) => {
             if (error) {
               console.error('Failed to insert map_marker into Supabase:', error);
+              setMarkers(markers);
+              CacheManager.set('map_markers', markers, 10 * 60 * 1000);
             }
           });
       }
@@ -413,11 +432,11 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
     if (draggingMarker) {
       const coords = screenToMapCoords(e.clientX, e.clientY);
-      setMarkers(prev =>
-        prev.map(m =>
-          m.id === draggingMarker ? { ...m, x: coords.x, y: coords.y } : m
-        )
+      const updated = markers.map(m =>
+        m.id === draggingMarker ? { ...m, x: coords.x, y: coords.y } : m
       );
+      setMarkers(updated);
+      // Не сохраняем в кеш при каждом движении мыши - только при отпускании
     }
   };
 
@@ -429,7 +448,9 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         color: drawColor,
         width: drawWidth,
       };
-      setDrawings(prev => [...prev, newDrawing]);
+      const updated = [...drawings, newDrawing];
+      setDrawings(updated);
+      CacheManager.set('map_drawings', updated, 10 * 60 * 1000);
 
       if (supabase) {
         supabase
@@ -438,10 +459,29 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           .then(({ error }) => {
             if (error) {
               console.error('Failed to insert map_drawing into Supabase:', error);
+              setDrawings(drawings);
+              CacheManager.set('map_drawings', drawings, 10 * 60 * 1000);
             }
           });
       }
       setCurrentPath([]);
+    }
+
+    // Сохраняем позицию маркера после перетаскивания
+    if (draggingMarker && supabase) {
+      const marker = markers.find(m => m.id === draggingMarker);
+      if (marker) {
+        CacheManager.set('map_markers', markers, 10 * 60 * 1000);
+        supabase
+          .from('map_markers')
+          .update({ marker })
+          .match({ 'marker->>id': draggingMarker })
+          .then(({ error }) => {
+            if (error) {
+              console.error('Failed to update marker position in Supabase:', error);
+            }
+          });
+      }
     }
 
     setIsDrawing(false);
@@ -472,20 +512,38 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
   const saveNote = () => {
     if (editingMarker) {
-      setMarkers(prev =>
-        prev.map(m =>
-          m.id === editingMarker ? { ...m, note: noteText } : m
-        )
+      const updated = markers.map(m =>
+        m.id === editingMarker ? { ...m, note: noteText } : m
       );
+      setMarkers(updated);
+      CacheManager.set('map_markers', updated, 10 * 60 * 1000);
       setEditingMarker(null);
       setNoteText('');
+
+      // Сохраняем в Supabase
+      if (supabase) {
+        const marker = updated.find(m => m.id === editingMarker);
+        if (marker) {
+          supabase
+            .from('map_markers')
+            .update({ marker })
+            .match({ 'marker->>id': editingMarker })
+            .then(({ error }) => {
+              if (error) {
+                console.error('Failed to update marker note in Supabase:', error);
+              }
+            });
+        }
+      }
     }
   };
 
   const deleteMarker = (markerId: string) => {
     const markerToDelete = markers.find(m => m.id === markerId);
-    setMarkers(prev => prev.filter(m => m.id !== markerId));
+    const updated = markers.filter(m => m.id !== markerId);
+    setMarkers(updated);
     setEditingMarker(null);
+    CacheManager.set('map_markers', updated, 10 * 60 * 1000);
 
     if (supabase && markerToDelete) {
       supabase
@@ -495,6 +553,8 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         .then(({ error }) => {
           if (error) {
             console.error('Failed to delete map_marker from Supabase:', error);
+            setMarkers(markers);
+            CacheManager.set('map_markers', markers, 10 * 60 * 1000);
           }
         });
     }
@@ -503,6 +563,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
   const clearDrawings = () => {
     if (confirm('Очистить все рисунки?')) {
       setDrawings([]);
+      CacheManager.set('map_drawings', [], 10 * 60 * 1000);
 
       if (supabase) {
         supabase
@@ -512,6 +573,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           .then(({ error }) => {
             if (error) {
               console.error('Failed to clear map_drawings in Supabase:', error);
+              // Не откатываем при ошибке очистки - пользователь уже подтвердил
             }
           });
       }

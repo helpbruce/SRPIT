@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
+import { CacheManager } from '../../shared/lib/cache';
 
 interface USBFile {
   url: string;
@@ -106,15 +107,27 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     };
   }, [viewerFile, currentType, viewerIndex]);
 
-  // Load USB files from Supabase + realtime подписка
+  // Load USB files from Supabase + кеш + realtime подписка
   useEffect(() => {
     if (!supabase) {
+      // Пробуем загрузить из кеша если Supabase не настроен
+      const cached = CacheManager.get<USBFiles>('usb_files');
+      if (cached) {
+        setUsbFiles(cached);
+      }
       return;
     }
 
     let isMounted = true;
 
     const loadUsbFiles = async () => {
+      // Сначала загружаем из кеша для мгновенного отображения
+      const cached = CacheManager.get<USBFiles>('usb_files');
+      if (cached && isMounted) {
+        setUsbFiles(cached);
+      }
+
+      // Затем загружаем свежие данные из Supabase
       const { data, error } = await supabase
         .from('usb_files')
         .select('type, url, name, created_at_label')
@@ -138,6 +151,8 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
       }
 
       setUsbFiles(next);
+      // Сохраняем в кеш
+      CacheManager.set('usb_files', next, 10 * 60 * 1000); // 10 минут
     };
 
     loadUsbFiles();
@@ -237,10 +252,15 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     const year = 2009;
     const createdAt = `${day}.${month}.${year}`;
 
-    setUsbFiles(prev => ({
-      ...prev,
-      [type]: [...prev[type], { url: embedUrl, name, createdAt }]
-    }));
+    const newFile = { url: embedUrl, name, createdAt };
+    const updated = {
+      ...usbFiles,
+      [type]: [...usbFiles[type], newFile]
+    };
+
+    setUsbFiles(updated);
+    // Обновляем кеш
+    CacheManager.set('usb_files', updated, 10 * 60 * 1000);
 
     if (supabase) {
       supabase
@@ -254,6 +274,9 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
         .then(({ error }) => {
           if (error) {
             console.error('Failed to insert usb_file into Supabase:', error);
+            // Откатываем при ошибке
+            setUsbFiles(usbFiles);
+            CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
           }
         });
     }
@@ -297,10 +320,14 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     
     const deletedFile = usbFiles[currentType][viewerIndex];
     const newFiles = usbFiles[currentType].filter((_, i) => i !== viewerIndex);
-    setUsbFiles(prev => ({
-      ...prev,
+    const updated = {
+      ...usbFiles,
       [currentType]: newFiles
-    }));
+    };
+
+    setUsbFiles(updated);
+    // Обновляем кеш
+    CacheManager.set('usb_files', updated, 10 * 60 * 1000);
 
     if (supabase && deletedFile) {
       supabase
@@ -314,6 +341,9 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
         .then(({ error }) => {
           if (error) {
             console.error('Failed to delete usb_file from Supabase:', error);
+            // Откатываем при ошибке
+            setUsbFiles(usbFiles);
+            CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
           }
         });
     }
