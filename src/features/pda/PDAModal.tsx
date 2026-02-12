@@ -21,7 +21,7 @@ interface Character {
   notes: string;
   tasks: Task[];
   caseNumber: string;
-  
+
 }
 
 interface BestiaryEntry {
@@ -171,17 +171,17 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       } else if (isMounted && charactersRes.data) {
         const mapped: Character[] = charactersRes.data.map((row: any) => ({
           id: row.id,
-          photo: row.photo,
-          name: row.name,
-          birthDate: row.birth_date ?? '',
+          photo: row.photo ?? '/icons/nodata.png',
+          name: row.name ?? '',
+          birthDate: row.birthdate ?? '',
           faction: row.faction ?? '',
           rank: row.rank ?? '',
           status: row.status ?? 'Неизвестен',
-          shortInfo: row.short_info ?? '',
-          fullInfo: row.full_info ?? '',
+          shortInfo: row.shortinfo ?? '',
+          fullInfo: row.fullinfo ?? '',
           notes: row.notes ?? '',
           tasks: (row.tasks ?? []) as Task[],
-          caseNumber: row.case_number ?? '',
+          caseNumber: row.casenumber ?? '',
         }));
         setCharacters(mapped);
       }
@@ -298,17 +298,18 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (supabase) {
       const payload = {
         id: editForm.id,
-        photo: editForm.photo,
-        name: editForm.name,
-        birth_date: editForm.birthDate,
-        faction: editForm.faction,
-        rank: editForm.rank,
-        status: editForm.status,
-        short_info: editForm.shortInfo,
-        full_info: editForm.fullInfo,
-        notes: editForm.notes,
-        case_number: editForm.caseNumber,
-        tasks: editForm.tasks,
+        photo: editForm.photo || null,
+        name: editForm.name || '',
+        birthdate: editForm.birthDate || null,
+        faction: editForm.faction || null,
+        rank: editForm.rank || null,
+        status: editForm.status || 'Неизвестен',
+        shortinfo: editForm.shortInfo || null,
+        fullinfo: editForm.fullInfo || null,
+        notes: editForm.notes || null,
+        casenumber: editForm.caseNumber || null,
+        tasks: editForm.tasks || null,
+        updated_at: new Date().toISOString(),
       };
 
       supabase
@@ -317,6 +318,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         .then(({ error }) => {
           if (error) {
             console.error('Failed to upsert pda_character in Supabase:', error);
+            alert('Ошибка сохранения: ' + error.message);
+          } else {
+            console.log('Character saved successfully');
           }
         });
     }
