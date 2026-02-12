@@ -106,13 +106,15 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     };
   }, [viewerFile, currentType, viewerIndex]);
 
-  // Load USB files from Supabase
+  // Load USB files from Supabase + realtime подписка
   useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
     let isMounted = true;
 
     const loadUsbFiles = async () => {
-      if (!supabase) return;
-
       const { data, error } = await supabase
         .from('usb_files')
         .select('type, url, name, created_at_label')
@@ -140,8 +142,18 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
 
     loadUsbFiles();
 
+    const channel = supabase
+      .channel('usb_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'usb_files' },
+        () => loadUsbFiles()
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
+      supabase.removeChannel(channel);
     };
   }, []);
 

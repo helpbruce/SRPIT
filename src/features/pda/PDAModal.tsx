@@ -149,77 +149,80 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     };
   }, [isOpen, onClose, isEditing, isEditingBestiary, selectedCharacter, selectedEntry, pdaMode]);
 
-  // Load data from Supabase
-useEffect(() => {
-  let isMounted = true;
-
-  const loadData = async () => {
-    if (!supabase) return;
-
-    const [charactersRes, bestiaryRes] = await Promise.all([
-      supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
-      supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
-    ]);
-
-    if (charactersRes.error) {
-      console.error('Failed to load pda_characters from Supabase:', charactersRes.error);
-    } else if (isMounted && charactersRes.data) {
-      const mapped: Character[] = charactersRes.data.map((row: any) => ({
-        id: row.id,
-        photo: row.photo,
-        name: row.name,
-        birthDate: row.birth_date ?? '',
-        faction: row.faction ?? '',
-        rank: row.rank ?? '',
-        status: row.status ?? 'Неизвестен',
-        shortInfo: row.short_info ?? '',
-        fullInfo: row.full_info ?? '',
-        notes: row.notes ?? '',
-        tasks: (row.tasks ?? []) as Task[],
-        caseNumber: row.case_number ?? '',
-      }));
-      setCharacters(mapped);
+  // Load data from Supabase + realtime подписка
+  useEffect(() => {
+    // Если Supabase не инициализировался (например, нет env-переменных на Vercel) —
+    // просто выходим, чтобы не ломать клиент.
+    if (!supabase) {
+      return;
     }
 
-    if (bestiaryRes.error) {
-      console.error('Failed to load bestiary_entries from Supabase:', bestiaryRes.error);
-    } else if (isMounted && bestiaryRes.data) {
-      const mapped: BestiaryEntry[] = bestiaryRes.data.map((row: any) => ({
-        id: row.id,
-        type: row.type,
-        name: row.name,
-        photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
-        shortInfo: row.short_info ?? '',
-        fullInfo: row.full_info ?? '',
-        dangerLevel: row.danger_level ?? 'средний',
-        anomalyNames: row.anomaly_names ?? [],
-      }));
-      setBestiaryEntries(mapped);
-    }
-  };
+    let isMounted = true;
 
-  loadData();
+    const loadData = async () => {
+      const [charactersRes, bestiaryRes] = await Promise.all([
+        supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
+        supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
+      ]);
 
-  // 🔥🔥🔥 ДОБАВЛЯЕШЬ ЭТО — И ВСЁ РАБОТАЕТ В REALTIME 🔥🔥🔥
-  const channel = supabase
-    .channel('pda_realtime')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'pda_characters' },
-      () => loadData()
-    )
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'bestiary_entries' },
-      () => loadData()
-    )
-    .subscribe();
+      if (charactersRes.error) {
+        console.error('Failed to load pda_characters from Supabase:', charactersRes.error);
+      } else if (isMounted && charactersRes.data) {
+        const mapped: Character[] = charactersRes.data.map((row: any) => ({
+          id: row.id,
+          photo: row.photo,
+          name: row.name,
+          birthDate: row.birth_date ?? '',
+          faction: row.faction ?? '',
+          rank: row.rank ?? '',
+          status: row.status ?? 'Неизвестен',
+          shortInfo: row.short_info ?? '',
+          fullInfo: row.full_info ?? '',
+          notes: row.notes ?? '',
+          tasks: (row.tasks ?? []) as Task[],
+          caseNumber: row.case_number ?? '',
+        }));
+        setCharacters(mapped);
+      }
 
-  return () => {
-    isMounted = false;
-    supabase.removeChannel(channel);
-  };
-}, []);
+      if (bestiaryRes.error) {
+        console.error('Failed to load bestiary_entries from Supabase:', bestiaryRes.error);
+      } else if (isMounted && bestiaryRes.data) {
+        const mapped: BestiaryEntry[] = bestiaryRes.data.map((row: any) => ({
+          id: row.id,
+          type: row.type,
+          name: row.name,
+          photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
+          shortInfo: row.short_info ?? '',
+          fullInfo: row.full_info ?? '',
+          dangerLevel: row.danger_level ?? 'средний',
+          anomalyNames: row.anomaly_names ?? [],
+        }));
+        setBestiaryEntries(mapped);
+      }
+    };
+
+    loadData();
+
+    const channel = supabase
+      .channel('pda_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pda_characters' },
+        () => loadData()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bestiary_entries' },
+        () => loadData()
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
 
   const filteredCharacters = characters.filter(char => {

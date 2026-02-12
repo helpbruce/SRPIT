@@ -82,13 +82,15 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, editingMarker]);
 
-  // Load markers & drawings from Supabase
+  // Load markers & drawings from Supabase + realtime подписка
   useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
     let isMounted = true;
 
     const load = async () => {
-      if (!supabase) return;
-
       const [markersRes, drawingsRes] = await Promise.all([
         supabase.from('map_markers').select('id, marker').order('created_at', { ascending: true }),
         supabase.from('map_drawings').select('id, path').order('created_at', { ascending: true }),
@@ -121,8 +123,23 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
     load();
 
+    const channel = supabase
+      .channel('map_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'map_markers' },
+        () => load()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'map_drawings' },
+        () => load()
+      )
+      .subscribe();
+
     return () => {
       isMounted = false;
+      supabase.removeChannel(channel);
     };
   }, []);
 
