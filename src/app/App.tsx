@@ -30,6 +30,8 @@ export default function App() {
   const [isPDAAnimating, setIsPDAAnimating] = useState(false);
   const [showPDALoading, setShowPDALoading] = useState(false);
 
+  const [isMuted, setIsMuted] = useState(false);
+
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [fullscreenIndex, setFullscreenIndex] = useState<number | null>(null);
@@ -217,13 +219,13 @@ export default function App() {
   };
 
   const handleMarlboroClick = () => {
-    if (isAnyModalOpen) return;
+    if (isAnyModalOpen || isMuted) return;
     setMarlboroClicked(true);
     sound1Ref.current?.play();
   };
 
   const handleZippoClick = () => {
-    if (!marlboroClicked || isAnyModalOpen) return;
+    if (!marlboroClicked || isAnyModalOpen || isMuted) return;
     
     setZippoClicked(true);
     sound2Ref.current?.play();
@@ -437,6 +439,7 @@ export default function App() {
               <PDAModal 
                 isOpen={isPDAOpen}
                 onClose={handlePDAClose}
+                isMuted={isMuted}
               />
             </div>
           )}
@@ -486,6 +489,7 @@ export default function App() {
             isOpen={isUSBOpen}
             onClose={handleUSBClose}
             onAddFile={() => handleAddFile('usb')}
+            isMuted={isMuted}
           />
         </div>
       )}
@@ -601,6 +605,14 @@ export default function App() {
       />
 
       <WelcomeGuide />
+
+      {/* Global Mute Button */}
+      <button
+        onClick={() => setIsMuted(prev => !prev)}
+        className="fixed bottom-4 right-4 z-[11000] px-3 py-2 bg-[#1a1a1a]/90 border border-[#3a3a3a] rounded text-xs font-mono text-gray-300 hover:bg-[#2a2a2a]"
+      >
+        {isMuted ? 'ЗВУК: ВЫКЛ' : 'ЗВУК: ВКЛ'}
+      </button>
     </div>
   );
 }

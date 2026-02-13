@@ -20,9 +20,10 @@ interface USBModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddFile: (context: 'usb') => void;
+  isMuted: boolean;
 }
 
-export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
+export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps) {
   const [usbView, setUsbView] = useState<'root' | 'photo' | 'video' | 'audio'>('root');
   const [usbFiles, setUsbFiles] = useState<USBFiles>({
     photo: [],
@@ -40,6 +41,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
   const startSoundRef = useRef<HTMLAudioElement>(null);
 
   const playAllSound = () => {
+    if (isMuted) return;
     if (allSoundRef.current) {
       allSoundRef.current.currentTime = 0;
       allSoundRef.current.play().catch(() => {});
@@ -47,6 +49,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
   };
 
   const playDelSound = () => {
+    if (isMuted) return;
     if (delSoundRef.current) {
       delSoundRef.current.currentTime = 0;
       delSoundRef.current.play().catch(() => {});
@@ -54,6 +57,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
   };
 
   const playStartSound = () => {
+    if (isMuted) return;
     if (startSoundRef.current) {
       startSoundRef.current.currentTime = 0;
       startSoundRef.current.play().catch(() => {});

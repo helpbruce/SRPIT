@@ -39,9 +39,10 @@ interface BestiaryEntry {
 interface PDAModalProps {
   isOpen: boolean;
   onClose: () => void;
+  isMuted: boolean;
 }
 
-export function PDAModal({ isOpen, onClose }: PDAModalProps) {
+export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary'>('menu');
   
   // Database states
@@ -103,6 +104,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
 
 
   const playAllSound = () => {
+    if (isMuted) return;
     if (allSoundRef.current) {
       allSoundRef.current.currentTime = 0;
       allSoundRef.current.play().catch(() => {});
@@ -110,6 +112,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   };
 
   const playSaveSound = () => {
+    if (isMuted) return;
     if (saveSoundRef.current) {
       saveSoundRef.current.currentTime = 0;
       saveSoundRef.current.play().catch(() => {});
@@ -712,13 +715,12 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
           {/* Database Mode - List View */}
           {pdaMode === 'database' && !selectedCharacter && !isEditing && (
             <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
-              <div className="p-3 border-b border-[#2a2a2a] flex items-center gap-2 flex-shrink-0">
+      <div className="p-3 border-b border-[#2a2a2a] flex items-center gap-2 flex-shrink-0">
                 <Search className="w-4 h-4 text-gray-600" />
                 <input 
                   type="text"
                   value={searchQuery}
                   onChange={(e) => {
-                    playAllSound();
                     setSearchQuery(e.target.value);
                   }}
                   placeholder="Поиск..."
@@ -1003,7 +1005,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               type="text"
               value={editForm.caseNumber}
               onChange={(e) => {
-                playAllSound();
                 setEditForm({...editForm, caseNumber: e.target.value});
               }}
               placeholder="88005553535"
@@ -1042,7 +1043,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               type="text"
               value={editForm.name}
               onChange={(e) => {
-                playAllSound();
                 setEditForm({...editForm, name: e.target.value});
               }}
               placeholder="Иванов Иван Иванович"
@@ -1057,7 +1057,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                 type="text"
                 value={editForm.birthDate}
                 onChange={(e) => {
-                  playAllSound();
                   setEditForm({...editForm, birthDate: e.target.value});
                 }}
                 placeholder="ДД.ММ.ГГГГ"
@@ -1090,7 +1089,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                 type="text"
                 value={editForm.faction}
                 onChange={(e) => {
-                  playAllSound();
                   setEditForm({...editForm, faction: e.target.value});
                 }}
                 placeholder="Чистое Небо"
@@ -1103,7 +1101,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                 type="text"
                 value={editForm.rank}
                 onChange={(e) => {
-                  playAllSound();
                   setEditForm({...editForm, rank: e.target.value});
                 }}
                 placeholder="Новичок/Сержант"
@@ -1117,8 +1114,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 <textarea
   value={editForm.shortInfo}
   onChange={(e) => {
-    playAllSound();
-
     let value = e.target.value;
 
     // Вставляем шаблон только один раз для этого персонажа
@@ -1190,8 +1185,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 <textarea
   value={task.description}
   onChange={(e) => {
-  playAllSound();
-
   let value = e.target.value;
 
   if (!timestampInsertedMap[task.id]) {
@@ -1637,7 +1630,6 @@ onClick={() => {
             type="text"
             value={bestiaryEditForm.name}
             onChange={(e) => {
-              playAllSound();
               setBestiaryEditForm({...bestiaryEditForm, name: e.target.value});
             }}
             placeholder="Название мутанта/аномалии/артефакта"
@@ -1757,7 +1749,6 @@ onClick={() => {
           <textarea 
             value={bestiaryEditForm.shortInfo}
             onChange={(e) => {
-              playAllSound();
               setBestiaryEditForm({...bestiaryEditForm, shortInfo: e.target.value});
             }}
             placeholder="Введите краткое описание"
@@ -1771,7 +1762,6 @@ onClick={() => {
           <textarea 
             value={bestiaryEditForm.fullInfo}
             onChange={(e) => {
-              playAllSound();
               setBestiaryEditForm({...bestiaryEditForm, fullInfo: e.target.value});
             }}
             placeholder="Введите полное описание, особенности, способы борьбы и т.д."
