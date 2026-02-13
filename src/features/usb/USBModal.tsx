@@ -4,6 +4,7 @@ import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
 interface USBFile {
+  id?: string;
   url: string;
   name: string;
   createdAt: string;
@@ -130,7 +131,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
       // Затем загружаем свежие данные из Supabase
       const { data, error } = await supabase
         .from('usb_files')
-        .select('type, url, name, created_at_label')
+        .select('id, type, url, name, created_at_label')
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -144,6 +145,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
       for (const row of data) {
         const type = row.type as 'photo' | 'video' | 'audio';
         next[type].push({
+          id: row.id as string,
           url: row.url as string,
           name: row.name as string,
           createdAt: (row.created_at_label as string) ?? '',
@@ -252,7 +254,7 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     const year = 2009;
     const createdAt = `${day}.${month}.${year}`;
 
-    const newFile = { url: embedUrl, name, createdAt };
+    const newFile: USBFile = { url: embedUrl, name, createdAt };
     const updated = {
       ...usbFiles,
       [type]: [...usbFiles[type], newFile]
@@ -271,13 +273,39 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
           name,
           created_at_label: createdAt,
         })
-        .then(({ error }) => {
+        .select('id')
+        .then(({ data, error }) => {
           if (error) {
             console.error('Failed to insert usb_file into Supabase:', error);
             // Откатываем при ошибке
             setUsbFiles(usbFiles);
             CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
+            return;
           }
+
+          const insertedId = data?.[0]?.id as string | undefined;
+          if (!insertedId) return;
+
+          // Обновляем id только что добавленного файла в состоянии
+          setUsbFiles((prev) => {
+            const updatedWithId: USBFiles = {
+              photo: [...prev.photo],
+              video: [...prev.video],
+              audio: [...prev.audio],
+            };
+
+            const filesOfType = updatedWithId[type];
+            const index = filesOfType.findIndex(
+              (f) => !f.id && f.url === embedUrl && f.name === name && f.createdAt === createdAt
+            );
+
+            if (index !== -1) {
+              filesOfType[index] = { ...filesOfType[index], id: insertedId };
+            }
+
+            CacheManager.set('usb_files', updatedWithId, 10 * 60 * 1000);
+            return updatedWithId;
+          });
         });
     }
 
@@ -330,22 +358,24 @@ export function USBModal({ isOpen, onClose, onAddFile }: USBModalProps) {
     CacheManager.set('usb_files', updated, 10 * 60 * 1000);
 
     if (supabase && deletedFile) {
-      supabase
-        .from('usb_files')
-        .delete()
-        .match({
-          url: deletedFile.url,
-          name: deletedFile.name,
-          created_at_label: deletedFile.createdAt,
-        })
-        .then(({ error }) => {
-          if (error) {
-            console.error('Failed to delete usb_file from Supabase:', error);
-            // Откатываем при ошибке
-            setUsbFiles(usbFiles);
-            CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
-          }
-        });
+      const query = supabase.from('usb_files').delete();
+
+      const deletePromise = deletedFile.id
+        ? query.eq('id', deletedFile.id)
+        : query.match({
+            url: deletedFile.url,
+            name: deletedFile.name,
+            created_at_label: deletedFile.createdAt,
+          });
+
+      deletePromise.then(({ error }) => {
+        if (error) {
+          console.error('Failed to delete usb_file from Supabase:', error);
+          // Откатываем при ошибке
+          setUsbFiles(usbFiles);
+          CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
+        }
+      });
     }
 
     if (newFiles.length === 0) {
