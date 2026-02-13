@@ -296,7 +296,7 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-cover bg-center bg-fixed flex items-center justify-center"
-      style={{ backgroundImage: `url(${getImagePath(isUSBOpen ? 'back2.jpg' : 'background.jpg')})` }}
+      style={{ backgroundImage: `url(${getImagePath(isUSBOpen ? 'back2.jpg' : 'background.png')})` }}
     >
       <audio ref={sound1Ref} src="/media/sounds/sound1.mp3" />
       <audio ref={sound2Ref} src="/media/sounds/sound2.mp3" />
