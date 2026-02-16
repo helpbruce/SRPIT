@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen } from 'lucide-react';
-import type { User } from '@supabase/supabase-js';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
@@ -45,9 +44,8 @@ interface PDAModalProps {
 
 export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary'>('menu');
-  // Auth state
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentProfile, setCurrentProfile] = useState<{ username: string } | null>(null);
+  // Local auth state
+  const [currentLogin, setCurrentLogin] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
@@ -162,47 +160,21 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     };
   }, [isOpen, onClose, isEditing, isEditingBestiary, selectedCharacter, selectedEntry, pdaMode]);
 
-  // Auth init on open
+  // Local auth init on open
   useEffect(() => {
-    let unsub: { unsubscribe: () => void } | null = null;
-    const init = async () => {
-      if (!isOpen) return;
-      const { data } = await supabase.auth.getUser();
-      const user = data.user ?? null;
-      setCurrentUser(user);
-      if (user) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        if (prof?.username) setCurrentProfile({ username: prof.username });
+    if (!isOpen) return;
+    try {
+      const saved = localStorage.getItem('pda_login');
+      if (saved) {
+        setCurrentLogin(saved);
         setShowAuthModal(false);
       } else {
+        setCurrentLogin(null);
         setShowAuthModal(true);
       }
-      const sub = supabase.auth.onAuthStateChange(async (_event, session) => {
-        const u = session?.user ?? null;
-        setCurrentUser(u);
-        if (u) {
-          const { data: prof2 } = await supabase
-            .from('profiles')
-            .select('username')
-            .eq('user_id', u.id)
-            .maybeSingle();
-          if (prof2?.username) setCurrentProfile({ username: prof2.username });
-          setShowAuthModal(false);
-        } else {
-          setCurrentProfile(null);
-          setShowAuthModal(true);
-        }
-      });
-      unsub = { unsubscribe: () => sub.data.subscription.unsubscribe() };
-    };
-    init();
-    return () => {
-      if (unsub) unsub.unsubscribe();
-    };
+    } catch {
+      setShowAuthModal(true);
+    }
   }, [isOpen]);
 
   // Load data from Supabase + кеш + realtime подписка
@@ -376,6 +348,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         notes: editForm.notes || null,
         casenumber: editForm.caseNumber || null,
         tasks: editForm.tasks || null,
+        author_login: currentLogin || null,
         updated_at: new Date().toISOString(),
       };
 
@@ -533,6 +506,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         full_info: bestiaryEditForm.fullInfo,
         danger_level: bestiaryEditForm.dangerLevel,
         anomaly_names: bestiaryEditForm.anomalyNames ?? [],
+        author_login: currentLogin || null,
       };
 
       supabase
@@ -694,18 +668,37 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     }
   };
 
-  // Auth actions
+  // Hash helper
+  const sha256Hex = async (text: string) => {
+    const enc = new TextEncoder();
+    const data = enc.encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    const bytes = Array.from(new Uint8Array(digest));
+    return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  // Local auth actions
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
       alert('Введите логин и пароль');
       return;
     }
-    const loginEmail = `${authEmail}@login.local`;
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: authPassword });
+    const hash = await sha256Hex(authPassword);
+    const { data, error } = await supabase
+      .from('users_local')
+      .select('password_hash')
+      .eq('login', authEmail)
+      .maybeSingle();
     if (error) {
       alert('Ошибка входа: ' + error.message);
       return;
     }
+    if (!data || data.password_hash !== hash) {
+      alert('Неверный логин или пароль');
+      return;
+    }
+    try { localStorage.setItem('pda_login', authEmail); } catch {}
+    setCurrentLogin(authEmail);
     setShowAuthModal(false);
   };
 
@@ -714,32 +707,35 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Введите логин и пароль');
       return;
     }
-    const loginEmail = `${authEmail}@login.local`;
-    const { data, error } = await supabase.auth.signUp({ email: loginEmail, password: authPassword });
-    if (error) {
-      alert('Ошибка регистрации: ' + error.message);
+    const { data: exists, error: selErr } = await supabase
+      .from('users_local')
+      .select('id')
+      .eq('login', authEmail)
+      .maybeSingle();
+    if (selErr) {
+      alert('Ошибка проверки логина: ' + selErr.message);
       return;
     }
-    const user = data.user;
-    if (user) {
-      const { error: perr } = await supabase
-        .from('profiles')
-        .upsert({ user_id: user.id, username: authEmail }, { onConflict: 'user_id' });
-      if (perr) {
-        alert('Ошибка записи профиля: ' + perr.message);
-        return;
-      }
-      setShowAuthModal(false);
-    } else {
-      alert('Завершите регистрацию и войдите под своим логином.');
-      setAuthMode('login');
+    if (exists) {
+      alert('Логин уже занят');
+      return;
     }
+    const hash = await sha256Hex(authPassword);
+    const { error: insErr } = await supabase
+      .from('users_local')
+      .insert({ login: authEmail, password_hash: hash });
+    if (insErr) {
+      alert('Ошибка регистрации: ' + insErr.message);
+      return;
+    }
+    try { localStorage.setItem('pda_login', authEmail); } catch {}
+    setCurrentLogin(authEmail);
+    setShowAuthModal(false);
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setCurrentUser(null);
-    setCurrentProfile(null);
+    try { localStorage.removeItem('pda_login'); } catch {}
+    setCurrentLogin(null);
     setShowAuthModal(true);
   };
 
@@ -806,9 +802,9 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             </div>
             <div className="flex items-center gap-2">
               <div className="text-gray-400 text-[10px] font-mono px-2 py-1 rounded border border-[#3a3a3a] bg-[#0f0f0f]">
-                Вы: {currentProfile?.username ?? 'Гость'}
+                Вы: {currentLogin ?? 'Гость'}
               </div>
-              {currentUser ? (
+              {currentLogin ? (
                 <button
                   className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px]"
                   onClick={() => { playAllSound(); handleLogout(); }}
@@ -1961,62 +1957,7 @@ onClick={() => {
           accept="image/*"
         />
 
-        {/* Auth Modal */}
-        {showAuthModal && (
-          <div className="fixed inset-0 bg-black/80 z-[100020] flex items-center justify-center">
-            <div className="w-[min(90vw,420px)] bg-[#1a1a1a] border-2 border-[#3a3a3a] rounded p-4">
-              <div className="text-gray-300 font-mono text-sm mb-3">
-                {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
-              </div>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  placeholder="Логин"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-                />
-                <input
-                  type="password"
-                  placeholder="Пароль"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-                />
-                {authMode === 'register' && (
-                  <input
-                    type="text"
-                    placeholder="Имя Прозвище"
-                    value={authUsername}
-                    onChange={(e) => setAuthUsername(e.target.value)}
-                    className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-                  />
-                )}
-              </div>
-              <div className="flex items-center gap-2 mt-4">
-                <button
-                  onClick={() => { playAllSound(); authMode === 'login' ? handleLogin() : handleRegister(); }}
-                  className="px-3 py-1.5 bg-gray-700/30 border border-gray-600 rounded hover:bg-gray-700/50 transition-all text-gray-300 font-mono text-xs"
-                >
-                  {authMode === 'login' ? 'ВОЙТИ' : 'ЗАРЕГИСТРИРОВАТЬСЯ'}
-                </button>
-                <button
-                  onClick={() => { playAllSound(); setAuthMode(authMode === 'login' ? 'register' : 'login'); }}
-                  className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
-                >
-                  {authMode === 'login' ? 'НЕТ АККАУНТА?' : 'УЖЕ ЕСТЬ АККАУНТ?'}
-                </button>
-                <button
-                  onClick={() => { playAllSound(); setShowAuthModal(false); }}
-                  className="ml-auto px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
-                >
-                  ПРОДОЛЖИТЬ КАК ГОСТЬ
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
+        
         <style>
           {`
             .pda-scrollbar::-webkit-scrollbar {
