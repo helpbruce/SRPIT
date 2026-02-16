@@ -1,4 +1,4 @@
-siimport { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 const DocumentStack = lazy(() => import('../features/folder/DocumentStack').then(m => ({ default: m.DocumentStack })));
 const USBModal = lazy(() => import('../features/usb/USBModal').then(m => ({ default: m.USBModal })));
