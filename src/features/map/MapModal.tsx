@@ -7,6 +7,7 @@ interface Marker {
   id: string;
   x: number;
   y: number;
+  placementZoom?: number;
   type:
     | 'radiation'
     | 'mutant'
@@ -295,6 +296,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         id: `marker-${Date.now()}`,
         x: coords.x,
         y: coords.y,
+        placementZoom: zoom,
         type: selectedTool as Marker['type'],
         note: '',
         text: selectedTool === 'text' ? text : undefined,
@@ -929,16 +931,17 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
                 if (marker.type === 'text') editMarkerText(marker.id);
               }}
             >
-              {marker.type === 'text' ? (
-                <div className="bg-black/80 text-gray-300 px-2 py-1 rounded border border-gray-500 text-xs font-mono whitespace-nowrap pointer-events-none select-none">
-                  {marker.text}
-                </div>
-              ) : (
-              <div className="flex items-center justify-center w-7 h-7 bg-[#0f2f0f]/70 border border-[#2a2a2a] rounded-md pointer-events-none select-none">
-  {getMarkerIcon(marker.type)}
-</div>
-
-              )}
+              <div style={{ transform: `scale(${1 / ((marker.placementZoom || 1))})` }}>
+                {marker.type === 'text' ? (
+                  <div className="bg-black/80 text-gray-300 px-2 py-1 rounded border border-gray-500 text-xs font-mono whitespace-nowrap pointer-events-none select-none">
+                    {marker.text}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center w-7 h-7 bg-[#0f2f0f]/70 border border-[#2a2a2a] rounded-md pointer-events-none select-none">
+                    {getMarkerIcon(marker.type)}
+                  </div>
+                )}
+              </div>
 
               {marker.note && (
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-gray-400 rounded-full flex items-center justify-center text-[8px] text-black font-bold pointer-events-none">
