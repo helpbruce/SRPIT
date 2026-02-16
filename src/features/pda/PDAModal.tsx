@@ -1993,7 +1993,7 @@ onClick={() => {
                 {authMode === 'register' && (
                   <input
                     type="text"
-                    placeholder="Имя (username)"
+                    placeholder="Имя Прозвище"
                     value={authUsername}
                     onChange={(e) => setAuthUsername(e.target.value)}
                     className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
