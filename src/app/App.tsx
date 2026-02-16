@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+siimport { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
-import { DocumentStack } from '../features/folder/DocumentStack';
-import { USBModal } from '../features/usb/USBModal';
-import { PDAModal } from '../features/pda/PDAModal';
-import { AddFileModal } from '../features/folder/AddFileModal';
-import { WelcomeGuide } from '../features/welcome/WelcomeGuide';
-import { MapModal } from '../features/map/MapModal';
+const DocumentStack = lazy(() => import('../features/folder/DocumentStack').then(m => ({ default: m.DocumentStack })));
+const USBModal = lazy(() => import('../features/usb/USBModal').then(m => ({ default: m.USBModal })));
+const PDAModal = lazy(() => import('../features/pda/PDAModal').then(m => ({ default: m.PDAModal })));
+const AddFileModal = lazy(() => import('../features/folder/AddFileModal').then(m => ({ default: m.AddFileModal })));
+const WelcomeGuide = lazy(() => import('../features/welcome/WelcomeGuide').then(m => ({ default: m.WelcomeGuide })));
+const MapModal = lazy(() => import('../features/map/MapModal').then(m => ({ default: m.MapModal })));
 import { getImagePath } from '../shared/lib/PlaceholderImages';
-import { FolderViewer } from '../features/folder/FolderViewer';
+const FolderViewer = lazy(() => import('../features/folder/FolderViewer').then(m => ({ default: m.FolderViewer })));
 import { supabase } from '../shared/lib/supabaseClient';
 import { CacheManager } from '../shared/lib/cache';
 
@@ -298,21 +298,24 @@ export default function App() {
     <div className="relative w-screen h-screen overflow-hidden bg-cover bg-center bg-fixed flex items-center justify-center"
       style={{ backgroundImage: `url(${getImagePath(isUSBOpen ? 'back2.jpg' : 'background.jpg')})` }}
     >
-      <audio ref={sound1Ref} src="/media/sounds/sound1.mp3" />
-      <audio ref={sound2Ref} src="/media/sounds/sound2.mp3" />
-      <audio ref={sound3Ref} src="/media/sounds/sound3.mp3" />
+      <audio ref={sound1Ref} src="/media/sounds/sound1.mp3" preload="none" />
+      <audio ref={sound2Ref} src="/media/sounds/sound2.mp3" preload="none" />
+      <audio ref={sound3Ref} src="/media/sounds/sound3.mp3" preload="none" />
 
-      <video 
-        className="fixed left-1/2 top-1/2 w-[2500px] h-auto -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[9999] transition-opacity duration-[2s]"
-        style={{ 
-          opacity: smokeVisible ? 1 : 0,
-          mixBlendMode: 'screen',
-        }}
-        src="/media/video/smoke.mp4"
-        autoPlay
-        muted
-        loop
-      />
+      {smokeVisible && (
+        <video 
+          className="fixed left-1/2 top-1/2 w-[2500px] h-auto -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[9999] transition-opacity duration-[2s]"
+          style={{ 
+            opacity: smokeVisible ? 1 : 0,
+            mixBlendMode: 'screen',
+          }}
+          src="/media/video/smoke.mp4"
+          autoPlay
+          muted
+          loop
+          preload="none"
+        />
+      )}
 
       {/* Map Corner - with proper shape detection */}
       <div 
@@ -350,21 +353,23 @@ export default function App() {
         }}
       >
         {/* Folder Viewer */}
-        <FolderViewer 
-          isOpen={isFolderOpen}
-          onToggle={() => !isAnyModalOpen && setIsFolderOpen(prev => !prev)}
-        >
-          {documents.length > 0 && (
-            <DocumentStack
-              pages={documents}
-              currentIndex={currentIndex}
-              setCurrentIndex={setCurrentIndex}
-              onDelete={handleDeleteDocument}
-              onOpenFullscreen={(index) => setFullscreenIndex(index)}
-              isFolderOpen={isFolderOpen}
-            />
-          )}
-        </FolderViewer>
+        <Suspense fallback={null}>
+          <FolderViewer 
+            isOpen={isFolderOpen}
+            onToggle={() => !isAnyModalOpen && setIsFolderOpen(prev => !prev)}
+          >
+            {documents.length > 0 && (
+              <DocumentStack
+                pages={documents}
+                currentIndex={currentIndex}
+                setCurrentIndex={setCurrentIndex}
+                onDelete={handleDeleteDocument}
+                onOpenFullscreen={(index) => setFullscreenIndex(index)}
+                isFolderOpen={isFolderOpen}
+              />
+            )}
+          </FolderViewer>
+        </Suspense>
         
 
         {/* USB Icon */}
@@ -436,11 +441,13 @@ export default function App() {
 
           {isPDAOpen && (
             <div className="absolute inset-0 flex items-center justify-center absolute top-51 right-19 left-8 bottom-52 mix-blend-screen">
-              <PDAModal 
-                isOpen={isPDAOpen}
-                onClose={handlePDAClose}
-                isMuted={isMuted}
-              />
+              <Suspense fallback={null}>
+                <PDAModal 
+                  isOpen={isPDAOpen}
+                  onClose={handlePDAClose}
+                  isMuted={isMuted}
+                />
+              </Suspense>
             </div>
           )}
         </div>
@@ -459,6 +466,8 @@ export default function App() {
             }}
             onClick={handleMarlboroClick}
             alt="Marlboro"
+            loading="lazy"
+            decoding="async"
           />
         )}
 
@@ -478,6 +487,8 @@ export default function App() {
             }}
             onClick={handleZippoClick}
             alt="Zippo"
+            loading="lazy"
+            decoding="async"
           />
         )}
       </div>
@@ -485,12 +496,14 @@ export default function App() {
       {/* USB Modal */}
       {isUSBOpen && (
         <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,800px)] h-[min(85vh,600px)] z-[10000]">
-          <USBModal 
-            isOpen={isUSBOpen}
-            onClose={handleUSBClose}
-            onAddFile={() => handleAddFile('usb')}
-            isMuted={isMuted}
-          />
+          <Suspense fallback={null}>
+            <USBModal 
+              isOpen={isUSBOpen}
+              onClose={handleUSBClose}
+              onAddFile={() => handleAddFile('usb')}
+              isMuted={isMuted}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -527,6 +540,8 @@ export default function App() {
               src={documents[fullscreenIndex].url} 
               className="max-w-full max-h-full object-contain pointer-events-none"
               alt=""
+              loading="eager"
+              decoding="async"
             />
           </div>
 
@@ -593,18 +608,20 @@ export default function App() {
       )}
 
       {/* Modals */}
-      <MapModal 
-        isOpen={isMapOpen}
-        onClose={() => setIsMapOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <MapModal 
+          isOpen={isMapOpen}
+          onClose={() => setIsMapOpen(false)}
+        />
 
-      <AddFileModal 
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdd={handleConfirmAdd}
-      />
+        <AddFileModal 
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onAdd={handleConfirmAdd}
+        />
 
-      <WelcomeGuide />
+        <WelcomeGuide />
+      </Suspense>
 
       {/* Global Mute Button */}
       <button
