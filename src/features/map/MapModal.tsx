@@ -866,10 +866,8 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       >
         <div
           ref={mapRef}
-          className="relative bg-cover bg-center overflow-hidden"
+          className="relative overflow-hidden"
           style={{
-            backgroundImage: `url(/icons/map_corner.png)`,
-            backgroundSize: 'cover',
             cursor: isDrawing
               ? 'none'
               : isPanning
@@ -881,8 +879,8 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
               : selectedTool === 'eraser'
               ? 'none'
               : 'crosshair',
-            width: `90vw`,
-            height: `90vh`,
+            width: `100vw`,
+            height: `100vh`,
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
             transition:
@@ -899,6 +897,16 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
             setCursorPos(null);
           }}
         >
+          {/* Fullscreen image without cropping */}
+          <img
+            src="/icons/map.png"
+            alt="Карта"
+            className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+            loading="eager"
+            decoding="async"
+            style={{ backgroundColor: 'black' }}
+          />
+
           {/* Canvas */}
           <canvas
             ref={canvasRef}
