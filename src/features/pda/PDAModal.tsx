@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen } from 'lucide-react';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
@@ -44,6 +45,14 @@ interface PDAModalProps {
 
 export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary'>('menu');
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<{ username: string } | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
   
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -153,6 +162,49 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose, isEditing, isEditingBestiary, selectedCharacter, selectedEntry, pdaMode]);
+
+  // Auth init on open
+  useEffect(() => {
+    let unsub: { unsubscribe: () => void } | null = null;
+    const init = async () => {
+      if (!isOpen) return;
+      const { data } = await supabase.auth.getUser();
+      const user = data.user ?? null;
+      setCurrentUser(user);
+      if (user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (prof?.username) setCurrentProfile({ username: prof.username });
+        setShowAuthModal(false);
+      } else {
+        setShowAuthModal(true);
+      }
+      const sub = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const u = session?.user ?? null;
+        setCurrentUser(u);
+        if (u) {
+          const { data: prof2 } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('user_id', u.id)
+            .maybeSingle();
+          if (prof2?.username) setCurrentProfile({ username: prof2.username });
+          setShowAuthModal(false);
+        } else {
+          setCurrentProfile(null);
+          setShowAuthModal(true);
+        }
+      });
+      unsub = { unsubscribe: () => sub.data.subscription.unsubscribe() };
+    };
+    init();
+    return () => {
+      if (unsub) unsub.unsubscribe();
+    };
+  }, [isOpen]);
 
   // Load data from Supabase + кеш + realtime подписка
   useEffect(() => {
@@ -643,6 +695,53 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     }
   };
 
+  // Auth actions
+  const handleLogin = async () => {
+    if (!authEmail || !authPassword) {
+      alert('Введите email и пароль');
+      return;
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    if (error) {
+      alert('Ошибка входа: ' + error.message);
+      return;
+    }
+    setShowAuthModal(false);
+  };
+
+  const handleRegister = async () => {
+    if (!authEmail || !authPassword || !authUsername) {
+      alert('Введите email, пароль и имя пользователя');
+      return;
+    }
+    const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    if (error) {
+      alert('Ошибка регистрации: ' + error.message);
+      return;
+    }
+    const user = data.user;
+    if (user) {
+      const { error: perr } = await supabase
+        .from('profiles')
+        .upsert({ user_id: user.id, username: authUsername }, { onConflict: 'user_id' });
+      if (perr) {
+        alert('Ошибка записи профиля: ' + perr.message);
+        return;
+      }
+      setShowAuthModal(false);
+    } else {
+      alert('Проверьте почту для подтверждения. После подтверждения вып��лните вход.');
+      setAuthMode('login');
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setCurrentProfile(null);
+    setShowAuthModal(true);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -660,19 +759,39 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                 {pdaMode === 'menu' ? 'ГЛАВНОЕ МЕНЮ' : pdaMode === 'database' ? 'БАЗА ДАННЫХ' : 'БЕСТИАРИЙ'}
               </span>
             </div>
-            <button 
-              className="w-7 h-7 bg-red-900/30 border border-red-800 rounded hover:bg-red-900/50 transition-all flex items-center justify-center"
-              onClick={() => {
-                playAllSound();
-                if (pdaMode !== 'menu') {
-                  setPdaMode('menu');
-                } else {
-                  onClose();
-                }
-              }}
-            >
-              {pdaMode !== 'menu' ? <ChevronLeft className="w-4 h-4 text-gray-400" /> : <X className="w-4 h-4 text-red-500" />}
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="text-gray-400 text-[10px] font-mono px-2 py-1 rounded border border-[#3a3a3a] bg-[#0f0f0f]">
+                Вы: {currentProfile?.username ?? 'Гость'}
+              </div>
+              {currentUser ? (
+                <button
+                  className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px]"
+                  onClick={() => { playAllSound(); handleLogout(); }}
+                >
+                  ВЫЙТИ
+                </button>
+              ) : (
+                <button
+                  className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px]"
+                  onClick={() => { playAllSound(); setShowAuthModal(true); }}
+                >
+                  ВОЙТИ
+                </button>
+              )}
+              <button 
+                className="w-7 h-7 bg-red-900/30 border border-red-800 rounded hover:bg-red-900/50 transition-all flex items-center justify-center"
+                onClick={() => {
+                  playAllSound();
+                  if (pdaMode !== 'menu') {
+                    setPdaMode('menu');
+                  } else {
+                    onClose();
+                  }
+                }}
+              >
+                {pdaMode !== 'menu' ? <ChevronLeft className="w-4 h-4 text-gray-400" /> : <X className="w-4 h-4 text-red-500" />}
+              </button>
+            </div>
           </div>
 
           {/* Menu Mode */}
@@ -1796,6 +1915,62 @@ onClick={() => {
           className="hidden"
           accept="image/*"
         />
+
+        {/* Auth Modal */}
+        {showAuthModal && (
+          <div className="fixed inset-0 bg-black/80 z-[100020] flex items-center justify-center">
+            <div className="w-[min(90vw,420px)] bg-[#1a1a1a] border-2 border-[#3a3a3a] rounded p-4">
+              <div className="text-gray-300 font-mono text-sm mb-3">
+                {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
+              </div>
+              <div className="space-y-2">
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+                />
+                <input
+                  type="password"
+                  placeholder="Пароль"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+                />
+                {authMode === 'register' && (
+                  <input
+                    type="text"
+                    placeholder="Имя (username)"
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value)}
+                    className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+                  />
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-4">
+                <button
+                  onClick={() => { playAllSound(); authMode === 'login' ? handleLogin() : handleRegister(); }}
+                  className="px-3 py-1.5 bg-gray-700/30 border border-gray-600 rounded hover:bg-gray-700/50 transition-all text-gray-300 font-mono text-xs"
+                >
+                  {authMode === 'login' ? 'ВОЙТИ' : 'ЗАРЕГИСТРИРОВАТЬСЯ'}
+                </button>
+                <button
+                  onClick={() => { playAllSound(); setAuthMode(authMode === 'login' ? 'register' : 'login'); }}
+                  className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
+                >
+                  {authMode === 'login' ? 'НЕТ АККАУНТА?' : 'УЖЕ ЕСТЬ АККАУНТ?'}
+                </button>
+                <button
+                  onClick={() => { playAllSound(); setShowAuthModal(false); }}
+                  className="ml-auto px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
+                >
+                  ПРОДОЛЖИТЬ КАК ГОСТЬ
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <style>
           {`
