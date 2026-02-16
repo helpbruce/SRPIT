@@ -919,10 +919,12 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           {markers.map(marker => (
             <div
               key={marker.id}
-              className="absolute -translate-x-1/2 -translate-y-1/2 cursor-move transition-all hover:scale-125 group"
+              className="absolute cursor-move transition-all group"
               style={{
                 left: `${marker.x}%`,
                 top: `${marker.y}%`,
+                transform: `translate(-50%, -50%) scale(${1 / ((marker.placementZoom || 1))})`,
+                transformOrigin: 'center center',
               }}
               onMouseDown={e => handleMarkerMouseDown(e, marker.id)}
               onClick={e => handleMarkerClick(e, marker.id)}
@@ -931,17 +933,15 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
                 if (marker.type === 'text') editMarkerText(marker.id);
               }}
             >
-              <div style={{ transform: `scale(${1 / ((marker.placementZoom || 1))})` }}>
-                {marker.type === 'text' ? (
-                  <div className="bg-black/80 text-gray-300 px-2 py-1 rounded border border-gray-500 text-xs font-mono whitespace-nowrap pointer-events-none select-none">
-                    {marker.text}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center w-7 h-7 bg-[#0f2f0f]/70 border border-[#2a2a2a] rounded-md pointer-events-none select-none">
-                    {getMarkerIcon(marker.type)}
-                  </div>
-                )}
-              </div>
+              {marker.type === 'text' ? (
+                <div className="relative bg-black/80 text-gray-300 px-2 py-1 rounded border border-gray-500 text-xs font-mono whitespace-nowrap pointer-events-none select-none">
+                  {marker.text}
+                </div>
+              ) : (
+                <div className="relative flex items-center justify-center w-7 h-7 bg-[#0f2f0f]/70 border border-[#2a2a2a] rounded-md pointer-events-none select-none">
+                  {getMarkerIcon(marker.type)}
+                </div>
+              )}
 
               {marker.note && (
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-gray-400 rounded-full flex items-center justify-center text-[8px] text-black font-bold pointer-events-none">
