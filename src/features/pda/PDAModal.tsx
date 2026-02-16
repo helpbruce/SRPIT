@@ -698,7 +698,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   // Auth actions
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
-      alert('Введите email и пароль');
+      alert('Введите логин и пароль');
       return;
     }
     const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
@@ -711,7 +711,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
   const handleRegister = async () => {
     if (!authEmail || !authPassword || !authUsername) {
-      alert('Введите email, пароль и имя пользователя');
+      alert('Введите логин, пароль и имя пользователя');
       return;
     }
     const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
