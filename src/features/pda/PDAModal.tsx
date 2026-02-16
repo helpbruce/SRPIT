@@ -52,8 +52,7 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
-  const [authUsername, setAuthUsername] = useState('');
-  
+    
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -698,10 +697,11 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   // Auth actions
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
-      alert('Введите email и пароль');
+      alert('Введите логин и пароль');
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    const loginEmail = `${authEmail}@login.local`;
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: authPassword });
     if (error) {
       alert('Ошибка входа: ' + error.message);
       return;
@@ -710,11 +710,12 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   const handleRegister = async () => {
-    if (!authEmail || !authPassword || !authUsername) {
-      alert('Введите email, пароль и имя пользователя');
+    if (!authEmail || !authPassword) {
+      alert('Введите логин и пароль');
       return;
     }
-    const { data, error } = await supabase.auth.signUp({ email: authEmail, password: authPassword });
+    const loginEmail = `${authEmail}@login.local`;
+    const { data, error } = await supabase.auth.signUp({ email: loginEmail, password: authPassword });
     if (error) {
       alert('Ошибка регистрации: ' + error.message);
       return;
@@ -723,14 +724,14 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     if (user) {
       const { error: perr } = await supabase
         .from('profiles')
-        .upsert({ user_id: user.id, username: authUsername }, { onConflict: 'user_id' });
+        .upsert({ user_id: user.id, username: authEmail }, { onConflict: 'user_id' });
       if (perr) {
         alert('Ошибка записи профиля: ' + perr.message);
         return;
       }
       setShowAuthModal(false);
     } else {
-      alert('Проверьте почту для подтверждения. После подтверждения вып��лните вход.');
+      alert('Завершите регистрацию и войдите под своим логином.');
       setAuthMode('login');
     }
   };
@@ -766,15 +767,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             onChange={(e) => setAuthPassword(e.target.value)}
             className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
             />
-            {authMode === 'register' && (
-            <input
-            type="text"
-            placeholder="Имя (username)"
-            value={authUsername}
-            onChange={(e) => setAuthUsername(e.target.value)}
-            className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-            />
-            )}
+            
             </div>
             <div className="flex items-center gap-2 mt-4">
               <button
