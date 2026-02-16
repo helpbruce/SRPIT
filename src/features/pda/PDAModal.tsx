@@ -743,6 +743,58 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   if (!isOpen) return null;
+  if (showAuthModal) {
+    return (
+      <>
+        <div className="fixed inset-0 z-[100020] flex items-center justify-center pointer-events-auto">
+          <div className="w-[min(90vw,420px)] bg-[#1a1a1a] border-2 border-[#3a3a3a] rounded p-4">
+            <div className="text-gray-300 font-mono text-sm mb-3">
+              {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
+            </div>
+            <div className="space-y-2">
+              <input
+                type="email"
+                placeholder="Email"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+              />
+              <input
+                type="password"
+                placeholder="Пароль"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+              />
+              {authMode === 'register' && (
+                <input
+                  type="text"
+                  placeholder="Имя (username)"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+                />
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              <button
+                onClick={() => { playAllSound(); authMode === 'login' ? handleLogin() : handleRegister(); }}
+                className="px-3 py-1.5 bg-gray-700/30 border border-gray-600 rounded hover:bg-gray-700/50 transition-all text-gray-300 font-mono text-xs"
+              >
+                {authMode === 'login' ? 'ВОЙТИ' : 'ЗАРЕГИСТРИРОВАТЬСЯ'}
+              </button>
+              <button
+                onClick={() => { playAllSound(); setAuthMode(authMode === 'login' ? 'register' : 'login'); }}
+                className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
+              >
+                {authMode === 'login' ? 'НЕТ АККАУНТА?' : 'УЖЕ ЕСТЬ АККАУНТ?'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
