@@ -461,7 +461,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
   const folders = [
     { key: 'photo' as const, title: 'Фотографии', icon: '📷', color: '#4a9eff', count: usbFiles.photo.length },
     { key: 'video' as const, title: 'Видео', icon: '📹', color: '#ff6b6b', count: usbFiles.video.length },
-    { key: 'audio' as const, title: 'Музыка', icon: '🎵', color: '#51cf66', count: usbFiles.audio.length }
+    { key: 'audio' as const, title: 'Аудио', icon: '🎵', color: '#51cf66', count: usbFiles.audio.length }
   ];
 
   const isVideoEmbed = (url: string) => {
