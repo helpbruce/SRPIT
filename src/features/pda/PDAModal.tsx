@@ -96,7 +96,8 @@ const generateTimestamp = () => {
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
 
-  return `[${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00)] - `;
+  const username = currentLogin ?? 'Гость';
+  return `[${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${username} ] - `;
 };
 
 const shortInfoTemplate = 
