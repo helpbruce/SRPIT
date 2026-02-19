@@ -86,18 +86,15 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   "Гравитационные"
 ];
 
-const [timestampInsertedMap, setTimestampInsertedMap] = useState({});
-
-
-const generateTimestamp = () => {
+const generateTimestamp = (nickname?: string) => {
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const hours = String(now.getHours()).padStart(2, '0');
   const minutes = String(now.getMinutes()).padStart(2, '0');
 
-  const username = currentLogin ?? 'Гость';
-  return `[${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${username} ] - `;
+  const username = nickname || currentLogin || 'Гость';
+  return `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${username} ]\n`;
 };
 
 const shortInfoTemplate = 
@@ -1346,15 +1343,13 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 <textarea
   value={task.description}
   onChange={(e) => {
+  playAllSound();
+
   let value = e.target.value;
 
-  if (!timestampInsertedMap[task.id]) {
-    value = generateTimestamp() + value;
-
-    setTimestampInsertedMap(prev => ({
-      ...prev,
-      [task.id]: true
-    }));
+  // Добавляем timestamp только если поле было пустым и начинаем ввод
+  if (task.description === '' && value.trim() !== '') {
+    value = generateTimestamp(editForm?.name) + value;
   }
 
   updateTask(task.id, { description: value });
@@ -1386,11 +1381,18 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
           <div>
             <label className="block text-gray-500 text-[10px] font-mono mb-1">ЗАМЕТКИ</label>
-            <textarea 
+            <textarea
               value={editForm.notes}
               onChange={(e) => {
                 playAllSound();
-                setEditForm({...editForm, notes: e.target.value});
+                let value = e.target.value;
+
+                // Добавляем timestamp только если поле было пустым и начинаем ввод
+                if (editForm.notes === '' && value.trim() !== '') {
+                  value = generateTimestamp(editForm?.name) + value;
+                }
+
+                setEditForm({...editForm, notes: value});
               }}
               placeholder="Введите  свои заметки на данного субъекта"
               rows={4}
