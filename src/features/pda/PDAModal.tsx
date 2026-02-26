@@ -51,9 +51,6 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
-
-  // Crypto encryptor state
-  const [isCryptoOpen, setIsCryptoOpen] = useState(false);
     
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -806,7 +803,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               {pdaMode === 'menu' && (
                 <button
                   className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px] flex items-center gap-1"
-                  onClick={() => { playAllSound(); setIsCryptoOpen(true); }}
+                  onClick={() => { playAllSound(); setPdaMode('crypto'); }}
                 >
                   <Lock className="w-3 h-3" />
                   ШИФРАТОР
@@ -2009,10 +2006,10 @@ onClick={() => {
           `}
         </style>
 
-        {/* Crypto Encryptor Modal */}
-        {isCryptoOpen && (
+        {/* Crypto Mode */}
+        {pdaMode === 'crypto' && (
           <CryptoEncryptor
-            onClose={() => { playAllSound(); setIsCryptoOpen(false); }}
+            onBack={() => { playAllSound(); setPdaMode('menu'); }}
             isMuted={isMuted}
           />
         )}
