@@ -880,6 +880,14 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             </div>
           )}
 
+          {/* Crypto Mode */}
+          {pdaMode === 'crypto' && (
+            <CryptoEncryptor
+              onBack={() => { playAllSound(); setPdaMode('menu'); }}
+              isMuted={isMuted}
+            />
+          )}
+
           {/* Database Mode - List View */}
           {pdaMode === 'database' && !selectedCharacter && !isEditing && (
             <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
@@ -2005,14 +2013,6 @@ onClick={() => {
             }
           `}
         </style>
-
-        {/* Crypto Mode */}
-        {pdaMode === 'crypto' && (
-          <CryptoEncryptor
-            onBack={() => { playAllSound(); setPdaMode('menu'); }}
-            isMuted={isMuted}
-          />
-        )}
       </div>
     </>
   );

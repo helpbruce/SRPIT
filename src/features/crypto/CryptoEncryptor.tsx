@@ -183,7 +183,7 @@ export function CryptoEncryptor({ onBack, isMuted }: CryptoEncryptorProps) {
       
       <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
         {/* Header with back button */}
-        <div className="p-3 border-b border-[#2a2a2a] flex-shrink-0">
+        <div className="p-3 border-b border-[#2a2a2a] flex-shrink-0 flex items-center justify-between">
           <button
             onClick={() => {
               playSound();
@@ -194,16 +194,15 @@ export function CryptoEncryptor({ onBack, isMuted }: CryptoEncryptorProps) {
             <ChevronLeft className="w-4 h-4" />
             НАЗАД
           </button>
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-gray-400" />
+            <h2 className="text-gray-300 font-mono text-sm tracking-wider">ШИФРАТОР</h2>
+          </div>
+          <div className="w-16"></div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto pda-scrollbar p-4 space-y-4">
-          {/* Title */}
-          <div className="flex items-center gap-2 mb-4">
-            <Lock className="w-5 h-5 text-gray-400" />
-            <h2 className="text-gray-300 font-mono text-sm tracking-wider">ШИФРАТОР</h2>
-          </div>
-
           {/* Input */}
           <div>
             <label className="text-gray-400 font-mono text-xs mb-2 block">
