@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen } from 'lucide-react';
+import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen, Lock } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
+import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 
 interface Task {
   id: string;
@@ -43,13 +44,16 @@ interface PDAModalProps {
 }
 
 export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
-  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary'>('menu');
+  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto'>('menu');
   // Local auth state
   const [currentLogin, setCurrentLogin] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+
+  // Crypto encryptor state
+  const [isCryptoOpen, setIsCryptoOpen] = useState(false);
     
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -795,10 +799,19 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"></div>
               <span className="text-gray-400 text-xs font-mono tracking-wider">
-                {pdaMode === 'menu' ? 'ГЛАВНОЕ МЕНЮ' : pdaMode === 'database' ? 'БАЗА ДАННЫХ' : 'БЕСТИАРИЙ'}
+                {pdaMode === 'menu' ? 'ГЛАВНОЕ МЕНЮ' : pdaMode === 'database' ? 'БАЗА ДАННЫХ' : pdaMode === 'bestiary' ? 'БЕСТИАРИЙ' : 'ШИФРАТОР'}
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {pdaMode === 'menu' && (
+                <button
+                  className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px] flex items-center gap-1"
+                  onClick={() => { playAllSound(); setIsCryptoOpen(true); }}
+                >
+                  <Lock className="w-3 h-3" />
+                  ШИФРАТОР
+                </button>
+              )}
               <div className="text-gray-400 text-[10px] font-mono px-2 py-1 rounded border border-[#3a3a3a] bg-[#0f0f0f]">
                 Вы: {currentLogin ?? 'Гость'}
               </div>
@@ -817,7 +830,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                   ВОЙТИ
                 </button>
               )}
-              <button 
+              <button
                 className="w-7 h-7 bg-red-900/30 border border-red-800 rounded hover:bg-red-900/50 transition-all flex items-center justify-center"
                 onClick={() => {
                   playAllSound();
@@ -1995,6 +2008,14 @@ onClick={() => {
             }
           `}
         </style>
+
+        {/* Crypto Encryptor Modal */}
+        {isCryptoOpen && (
+          <CryptoEncryptor
+            onClose={() => { playAllSound(); setIsCryptoOpen(false); }}
+            isMuted={isMuted}
+          />
+        )}
       </div>
     </>
   );
