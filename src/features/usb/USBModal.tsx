@@ -124,14 +124,8 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
     };
   }, [viewerFile, currentType, viewerIndex]);
 
-  // Хелпер: SHA-256 хэш в hex
-  const sha256Hex = async (text: string) => {
-    const enc = new TextEncoder();
-    const data = enc.encode(text);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    const bytes = Array.from(new Uint8Array(digest));
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
-  };
+  // Пароль сохраняется в открытом виде для полной прозрачности.
+  // Используем password_hash как поле для хранения реального пароля.
 
   // Load USB files from Supabase + кеш + realtime подписка
   useEffect(() => {
@@ -365,20 +359,14 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
         const hint = file.protected_hint ? `\nПодсказка: ${file.protected_hint}` : '';
         const input = prompt(`Файл защищён паролем. Введите пароль.${hint}`);
         if (!input) return;
-        try {
-          const hash = await sha256Hex(input);
-          if (hash !== file.password_hash) {
-            alert('Неверный пароль');
-            return;
-          }
-          const next = new Set(unlocked);
-          next.add(key);
-          setUnlocked(next);
-          try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
-        } catch (e) {
-          console.error('hash error', e);
+        if (input !== file.password_hash) {
+          alert('Неверный пароль');
           return;
         }
+        const next = new Set(unlocked);
+        next.add(key);
+        setUnlocked(next);
+        try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
       }
     }
     setViewerFile(file);
@@ -596,6 +584,9 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                           {file.name}
                         </div>
                         <div className="text-[9px] text-gray-700 font-mono">{file.createdAt}</div>
+                        {file.is_protected && file.password_hash && (
+                          <div className="text-[9px] text-red-700 font-mono break-all">Пароль: {file.password_hash}</div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -731,24 +722,21 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                     onClick={async () => {
                       const pwd = prompt('Установите пароль на файл:');
                       if (!pwd || !viewerFile?.id) return;
-                      const confirmPwd = prompt('Повторите ��ароль:');
+                      const confirmPwd = prompt('Повторите пароль:');
                       if (confirmPwd !== pwd) { alert('Пароли не совпадают'); return; }
                       const hint = prompt('Подсказка (необязательно):') || null;
-                      const hash = await sha256Hex(pwd);
-                      // локально
-                      setViewerFile(v => v ? { ...v, is_protected: true, password_hash: hash, protected_hint: hint } : v);
+                      setViewerFile(v => v ? { ...v, is_protected: true, password_hash: pwd, protected_hint: hint } : v);
                       setUsbFiles(prev => {
                         if (!currentType) return prev;
                         const copy: USBFiles = { photo: [...prev.photo], video: [...prev.video], audio: [...prev.audio] };
                         const arr = copy[currentType];
                         const i = arr.findIndex(f => f.id === viewerFile!.id);
-                        if (i !== -1) arr[i] = { ...arr[i], is_protected: true, password_hash: hash, protected_hint: hint };
+                        if (i !== -1) arr[i] = { ...arr[i], is_protected: true, password_hash: pwd, protected_hint: hint };
                         CacheManager.set('usb_files', copy, 10 * 60 * 1000);
                         return copy;
                       });
-                      // сервер
                       if (supabase) {
-                        await supabase.from('usb_files').update({ is_protected: true, password_hash: hash, protected_hint: hint }).eq('id', viewerFile.id);
+                        await supabase.from('usb_files').update({ is_protected: true, password_hash: pwd, protected_hint: hint }).eq('id', viewerFile.id);
                       }
                     }}
                     className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
@@ -758,40 +746,48 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                   </button>
                 )}
                 {viewerFile?.id && viewerFile?.is_protected && (
-                  <button
-                    onClick={async () => {
-                      const pwd = prompt('Введите текущий пароль для снятия защиты:');
-                      if (!pwd || !viewerFile?.id) return;
-                      const hash = await sha256Hex(pwd);
-                      if (hash !== viewerFile.password_hash) { alert('Неверный пароль'); return; }
-                      // локально
-                      setViewerFile(v => v ? { ...v, is_protected: false, password_hash: null, protected_hint: null } : v);
-                      setUsbFiles(prev => {
-                        if (!currentType) return prev;
-                        const copy: USBFiles = { photo: [...prev.photo], video: [...prev.video], audio: [...prev.audio] };
-                        const arr = copy[currentType];
-                        const i = arr.findIndex(f => f.id === viewerFile!.id);
-                        if (i !== -1) arr[i] = { ...arr[i], is_protected: false, password_hash: null, protected_hint: null };
-                        CacheManager.set('usb_files', copy, 10 * 60 * 1000);
-                        return copy;
-                      });
-                      // и зачистим разблокировку в сессии
-                      if (viewerFile.id) {
-                        const next = new Set(unlocked);
-                        next.delete(viewerFile.id);
-                        setUnlocked(next);
-                        try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
-                      }
-                      // сервер
-                      if (supabase) {
-                        await supabase.from('usb_files').update({ is_protected: false, password_hash: null, protected_hint: null }).eq('id', viewerFile.id);
-                      }
-                    }}
-                    className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
-                    style={{ fontFamily: 'Tahoma, sans-serif' }}
-                  >
-                    🔓 Снять защиту
-                  </button>
+                  <>
+                    <button
+                      onClick={async () => {
+                        const pwd = prompt('Введите текущий пароль для снятия защиты:');
+                        if (!pwd || !viewerFile?.id) return;
+                        if (pwd !== viewerFile.password_hash) { alert('Неверный пароль'); return; }
+                        setViewerFile(v => v ? { ...v, is_protected: false, password_hash: null, protected_hint: null } : v);
+                        setUsbFiles(prev => {
+                          if (!currentType) return prev;
+                          const copy: USBFiles = { photo: [...prev.photo], video: [...prev.video], audio: [...prev.audio] };
+                          const arr = copy[currentType];
+                          const i = arr.findIndex(f => f.id === viewerFile!.id);
+                          if (i !== -1) arr[i] = { ...arr[i], is_protected: false, password_hash: null, protected_hint: null };
+                          CacheManager.set('usb_files', copy, 10 * 60 * 1000);
+                          return copy;
+                        });
+                        if (viewerFile.id) {
+                          const next = new Set(unlocked);
+                          next.delete(viewerFile.id);
+                          setUnlocked(next);
+                          try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
+                        }
+                        if (supabase) {
+                          await supabase.from('usb_files').update({ is_protected: false, password_hash: null, protected_hint: null }).eq('id', viewerFile.id);
+                        }
+                      }}
+                      className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
+                      style={{ fontFamily: 'Tahoma, sans-serif' }}
+                    >
+                      🔓 Снять защиту
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!viewerFile?.password_hash) return;
+                        alert(`Текущий пароль: ${viewerFile.password_hash}`);
+                      }}
+                      className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
+                      style={{ fontFamily: 'Tahoma, sans-serif' }}
+                    >
+                      👁️ Показать пароль
+                    </button>
+                  </>
                 )}
                 {viewerIndex > 0 && (
                   <button

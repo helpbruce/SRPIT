@@ -668,21 +668,12 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   // Hash helper
-  const sha256Hex = async (text: string) => {
-    const enc = new TextEncoder();
-    const data = enc.encode(text);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    const bytes = Array.from(new Uint8Array(digest));
-    return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
-  };
-
   // Local auth actions
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
       alert('Введите логин и пароль');
       return;
     }
-    const hash = await sha256Hex(authPassword);
     const { data, error } = await supabase
       .from('users_local')
       .select('password_hash')
@@ -692,7 +683,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Ошибка входа: ' + error.message);
       return;
     }
-    if (!data || data.password_hash !== hash) {
+    if (!data || data.password_hash !== authPassword) {
       alert('Неверный логин или пароль');
       return;
     }
@@ -719,10 +710,9 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Логин уже занят');
       return;
     }
-    const hash = await sha256Hex(authPassword);
     const { error: insErr } = await supabase
       .from('users_local')
-      .insert({ login: authEmail, password_hash: hash });
+      .insert({ login: authEmail, password_hash: authPassword });
     if (insErr) {
       alert('Ошибка регистрации: ' + insErr.message);
       return;
@@ -756,7 +746,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
             />
             <input
-            type="password"
+            type="text"
             placeholder="Пароль"
             value={authPassword}
             onChange={(e) => setAuthPassword(e.target.value)}

@@ -7,7 +7,6 @@ interface Marker {
   id: string;
   x: number;
   y: number;
-  placementZoom?: number;
   type:
     | 'radiation'
     | 'mutant'
@@ -58,10 +57,26 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
   );
   const [drawColor, setDrawColor] = useState('#ff0000');
   const [drawWidth, setDrawWidth] = useState(3);
+  const drawingsRef = useRef<DrawingPath[]>([]);
+  const pendingEraseRef = useRef<DrawingPath[]>([]);
 
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
     null
   );
+
+  useEffect(() => {
+    drawingsRef.current = drawings;
+  }, [drawings]);
+
+  const syncDrawingsToSupabase = async (updated: DrawingPath[]) => {
+    if (!supabase) return;
+    const { error } = await supabase
+      .from('map_drawings')
+      .upsert(updated.map((path) => ({ path })), { onConflict: 'id' });
+    if (error) {
+      console.error('Failed to sync map_drawings to Supabase:', error);
+    }
+  };
 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -174,10 +189,11 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     if (!ctx) return;
 
     const rect = mapRef.current.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
     // Рисуем все сохранённые рисунки
     drawings.forEach(path => {
@@ -296,7 +312,6 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         id: `marker-${Date.now()}`,
         x: coords.x,
         y: coords.y,
-        placementZoom: zoom,
         type: selectedTool as Marker['type'],
         note: '',
         text: selectedTool === 'text' ? text : undefined,
@@ -359,20 +374,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         });
       });
 
-      if (supabase) {
-        supabase
-          .from('map_drawings')
-          .upsert(
-            newDrawings.map(path => ({ path })),
-            { onConflict: 'id' }
-          )
-          .then(({ error }) => {
-            if (error) {
-              console.error('Failed to upsert map_drawings in Supabase:', error);
-            }
-          });
-      }
-
+        pendingEraseRef.current = newDrawings;
       return newDrawings;
     });
   };
@@ -467,6 +469,12 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           });
       }
       setCurrentPath([]);
+    }
+
+    if (isDrawing && selectedTool === 'eraser' && pendingEraseRef.current.length > 0) {
+      CacheManager.set('map_drawings', pendingEraseRef.current, 10 * 60 * 1000);
+      syncDrawingsToSupabase(pendingEraseRef.current);
+      pendingEraseRef.current = [];
     }
 
     // Сохраняем позицию маркера после перетаскивания
@@ -923,7 +931,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
               style={{
                 left: `${marker.x}%`,
                 top: `${marker.y}%`,
-                transform: `translate(-50%, -50%) scale(${1 / ((marker.placementZoom || 1))})`,
+                transform: `translate(-50%, -50%) scale(${1 / zoom})`,
                 transformOrigin: 'center center',
               }}
               onMouseDown={e => handleMarkerMouseDown(e, marker.id)}
