@@ -5,7 +5,8 @@
       "Bash(node *)",
       "Bash(\"c:\\program files\\git\\cmd\\git.exe\" *)",
       "Bash(findstr *)",
-      "Bash(more *)"
+      "Bash(more *)",
+      "Bash(del *)"
     ]
   },
   "$version": 3
