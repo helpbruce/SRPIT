@@ -80,6 +80,7 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   // Local auth state
   const [currentLogin, setCurrentLogin] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<'user' | 'admin'>('user');
+  const [canAccessAbd, setCanAccessAbd] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
@@ -771,10 +772,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     }
   };
 
-  // Hash helper
   // Local auth actions
-  const [canAccessAbd, setCanAccessAbd] = useState(false);
-
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
       alert('Введите логин и пароль');
