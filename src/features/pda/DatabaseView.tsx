@@ -1,15 +1,7 @@
-import { useState, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar, Save } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar, Save, MessageSquare, Edit3 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
-
-interface Task {
-  id: string;
-  description: string;
-  status: 'в работе' | 'провалено' | 'выполнено';
-  author_login?: string;
-  created_at?: string; // ISO timestamp
-}
 
 interface Character {
   id: string;
@@ -22,8 +14,17 @@ interface Character {
   shortInfo: string;
   fullInfo: string;
   notes: string;
-  tasks: Task[];
   caseNumber: string;
+}
+
+interface CharacterEntry {
+  id: string;
+  character_id: string;
+  author_login: string;
+  content: string;
+  entry_type: 'task' | 'short_info' | 'full_info' | 'notes' | 'edit';
+  is_update: boolean;
+  created_at: string;
 }
 
 interface DatabaseViewProps {
@@ -55,7 +56,7 @@ interface DatabaseViewProps {
   isSecret: boolean;
   canAccessAbd: boolean;
   photo1InputRef: React.RefObject<HTMLInputElement>;
-  getTaskPlaceholder: (status: Task['status']) => string;
+  getTaskPlaceholder: (status: 'в работе' | 'провалено' | 'выполнено') => string;
 }
 
 const getStatusDotColor = (status: string) => {
@@ -68,6 +69,17 @@ const getStatusDotColor = (status: string) => {
   }
 };
 
+// Формат даты: [12.04.2009 | 15:30 (UTC+3:00) | user1]
+const formatEntryDate = (isoDate: string | null) => {
+  if (!isoDate) return '[— | — (UTC+3:00) | —]';
+  const d = new Date(isoDate);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `[${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | `;
+};
+
 export function DatabaseView({
   activeDatabase, setActiveDatabase, viewMode, setViewMode,
   characters, setCharacters, searchQuery, setSearchQuery, filteredCharacters,
@@ -75,9 +87,11 @@ export function DatabaseView({
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
   playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
-  photo1InputRef, getTaskPlaceholder,
+  photo1InputRef,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
+  const [entries, setEntries] = useState<CharacterEntry[]>([]);
+  const [loadingEntries, setLoadingEntries] = useState(false);
 
   const baseColor = isSecret ? 'red' : 'gray';
   const bgColor = isSecret ? 'bg-[#0a0505]' : 'bg-[#050505]';
@@ -89,102 +103,74 @@ export function DatabaseView({
   const cardBg = isSecret ? 'bg-red-950/20 border-red-900/30 hover:bg-red-900/30 hover:border-red-800/50' : 'bg-[#0a0a0a] border-[#2a2a2a] hover:bg-[#0f0f0f] hover:border-[#3a3a3a]';
   const cardWanted = isSecret ? 'bg-red-900/30 border-red-700 hover:bg-red-800/40' : 'bg-red-900/20 border-red-700 hover:bg-red-900/30';
 
+  const entriesTableName = isSecret ? 'secret_character_entries' : 'pda_character_entries';
+
+  // Загрузка записей для персонажа
+  useEffect(() => {
+    if (!selectedCharacter || !supabase) return;
+    setLoadingEntries(true);
+    supabase
+      .from(entriesTableName)
+      .select('*')
+      .eq('character_id', selectedCharacter.id)
+      .order('created_at', { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Failed to load entries:', error);
+          setEntries([]);
+        } else {
+          setEntries(data || []);
+        }
+        setLoadingEntries(false);
+      });
+  }, [selectedCharacter?.id, entriesTableName, supabase]);
+
+  // Добавить новую запись
+  const addEntry = async (content: string, type: CharacterEntry['entry_type'], isUpdate = false) => {
+    if (!supabase || !selectedCharacter) return;
+    const entry: CharacterEntry = {
+      id: crypto.randomUUID(),
+      character_id: selectedCharacter.id,
+      author_login: currentLogin || 'Аноним',
+      content,
+      entry_type: type,
+      is_update: isUpdate,
+      created_at: new Date().toISOString(),
+    };
+    setEntries(prev => [...prev, entry]);
+    await supabase.from(entriesTableName).insert(entry);
+  };
+
+  // Сохранение персонажа (добавляет записи а не меняет поля)
   const saveCharacter = () => {
     playSaveSound();
-    if (!editForm) return;
+    if (!editForm || !selectedCharacter) return;
 
-    // Сначала сохраняем в Supabase
-    if (supabase) {
-      const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-      const payload = {
-        id: editForm.id, photo: editForm.photo || null, name: editForm.name || '',
-        birthdate: editForm.birthDate || null, faction: editForm.faction || null,
-        rank: editForm.rank || null, status: editForm.status || 'Неизвестен',
-        shortinfo: editForm.shortInfo || null, fullinfo: editForm.fullInfo || null,
-        notes: editForm.notes || null, casenumber: editForm.caseNumber || null,
-        tasks: editForm.tasks || null, author_login: currentLogin || null,
-        updated_at: new Date().toISOString(),
-      };
+    // Обновляем кэш персонажа
+    const updatedChars = characters.map(c => c.id === editForm.id ? editForm : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
 
-      console.log(`Saving to ${tableName}:`, payload);
-
-      supabase.from(tableName).upsert(payload, { onConflict: 'id' }).then(({ data, error }) => {
-        if (error) {
-          console.error(`Failed to upsert ${tableName}:`, error);
-          alert(`Ошибка сохранения: ${error.message}`);
-          return;
-        }
-        console.log(`Saved to ${tableName}:`, data);
-
-        // Только после успешного сохранения обновляем UI
-        if (isCreating) {
-          setCharacters(prev => [...prev, editForm]);
-          setIsCreating(false);
-        } else {
-          setCharacters(prev => prev.map(c => c.id === editForm!.id ? editForm! : c));
-        }
-        const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-        const updated = isCreating ? [...characters, editForm] : characters.map(c => c.id === editForm.id ? editForm : c);
-        CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
-        setIsEditing(false);
-        setEditForm(null);
-        setTasksExpanded(false);
-        setEditTasksExpanded(false);
-      });
-    } else {
-      // Без Supabase — просто локальное сохранение
-      if (isCreating) {
-        setCharacters(prev => [...prev, editForm]);
-        setIsCreating(false);
-      } else {
-        setCharacters(prev => prev.map(c => c.id === editForm!.id ? editForm! : c));
-      }
-      const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-      const updated = isCreating ? [...characters, editForm] : characters.map(c => c.id === editForm.id ? editForm : c);
-      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
-      setIsEditing(false);
-      setEditForm(null);
-      setTasksExpanded(false);
-      setEditTasksExpanded(false);
+    // Добавляем записи для каждого изменённого поля
+    if (editForm.shortInfo !== selectedCharacter.shortInfo) {
+      addEntry(editForm.shortInfo || '—', 'short_info');
     }
-  };
-
-  const deleteCharacter = (id: string) => {
-    playAllSound();
-    if (confirm('Удалить персонажа?')) {
-      const updated = characters.filter(c => c.id !== id);
-      setCharacters(updated);
-      const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
-      if (selectedCharacter?.id === id) setSelectedCharacter(null);
-      if (supabase) {
-        const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-        supabase.from(tableName).delete().eq('id', id).then(({ error }) => {
-          if (error) {
-            console.error('Failed to delete:', error);
-            setCharacters(characters);
-            CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
-          }
-        });
-      }
+    if (editForm.fullInfo !== selectedCharacter.fullInfo) {
+      addEntry(editForm.fullInfo || '—', 'full_info');
     }
-  };
+    if (editForm.notes !== selectedCharacter.notes) {
+      addEntry(editForm.notes || '—', 'notes');
+    }
+    // Обновляем статус если изменился
+    if (editForm.status !== selectedCharacter.status) {
+      addEntry(`Статус изменён: ${editForm.status}`, 'edit');
+    }
 
-  const addTask = () => {
-    playAllSound();
-    if (!editForm) return;
-    setEditForm({ ...editForm, tasks: [{ id: `task-${Date.now()}`, description: '', status: 'в работе' }, ...editForm.tasks] });
-    setEditTasksExpanded(true);
-  };
-
-  const updateTask = (taskId: string, updates: Partial<Task>) => {
-    if (!editForm) return;
-    setEditForm({ ...editForm, tasks: editForm.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t) });
-  };
-
-  const deleteTask = (taskId: string) => {
-    if (!editForm) return;
-    setEditForm({ ...editForm, tasks: editForm.tasks.filter(t => t.id !== taskId) });
+    setIsEditing(false);
+    setEditForm(null);
+    setTasksExpanded(false);
+    setEditTasksExpanded(false);
   };
 
   // ===== EDIT MODE =====
@@ -194,7 +180,7 @@ export function DatabaseView({
         <div className={`p-3 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
           <h2 className={`text-sm font-mono ${textMuted}`}>{isCreating ? 'НОВЫЙ ПЕРСОНАЖ' : 'РЕДАКТИРОВАНИЕ'}</h2>
           <div className="flex gap-2">
-            <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
+            <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); setEditTasksExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
             <button onClick={saveCharacter} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
               <Save className="w-4 h-4" /> СОХРАНИТЬ
             </button>
@@ -247,39 +233,61 @@ export function DatabaseView({
                 </div>
               </div>
 
-              {/* Short Info */}
+              {/* Short Info with Add button */}
               <div>
-                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>КРАТКАЯ ИНФО</label>
-                <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Рост, вес, телосложение..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
-              </div>
-
-              {/* Full Info */}
-              <div>
-                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ПОЛНАЯ ИНФО</label>
-                <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={6} />
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАМЕТКИ</label>
-                <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
-              </div>
-
-              {/* Tasks */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className={`${textMuted} font-mono text-[10px]`}>ЗАДАЧИ ({editForm.tasks.filter(t => t.status === 'в работе').length} активн.)</span>
-                  <button onClick={() => { playAllSound(); const newTask: Task = { id: crypto.randomUUID(), description: '', status: 'в работе', author_login: currentLogin || 'Аноним', created_at: new Date().toISOString() }; setEditForm({ ...editForm, tasks: [newTask, ...editForm.tasks] }); setEditTasksExpanded(true); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>+ ДОБАВИТЬ</button>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={`block ${textMuted} text-[10px] font-mono`}>КРАТКАЯ ИНФО</label>
+                  <button
+                    onClick={() => {
+                      const content = editForm.shortInfo;
+                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                      addEntry(content, 'short_info');
+                      setEditForm({ ...editForm, shortInfo: '' });
+                    }}
+                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                  >
+                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                  </button>
                 </div>
-                {editForm.tasks.map(t => (
-                  <div key={t.id} className="flex gap-2 mb-2 items-start">
-                    <select value={t.status} onChange={(e) => setEditForm({ ...editForm, tasks: editForm.tasks.map(tk => tk.id === t.id ? { ...tk, status: e.target.value as Task['status'] } : tk) })} className={`p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor}`}>
-                      <option value="в работе">В работе</option><option value="провалено">Провалено</option><option value="выполнено">Выполнено</option>
-                    </select>
-                    <input type="text" placeholder={getTaskPlaceholder(t.status)} value={t.description} onChange={(e) => setEditForm({ ...editForm, tasks: editForm.tasks.map(tk => tk.id === t.id ? { ...tk, description: e.target.value } : tk) })} className={`flex-1 p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor} placeholder:opacity-30`} />
-                    <button onClick={() => setEditForm({ ...editForm, tasks: editForm.tasks.filter(tk => tk.id !== t.id) })} className={`${isSecret ? 'text-red-600' : 'text-gray-600'} hover:text-red-400`}>✕</button>
-                  </div>
-                ))}
+                <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
+              </div>
+
+              {/* Full Info with Add button */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={`block ${textMuted} text-[10px] font-mono`}>ПОЛНАЯ ИНФО</label>
+                  <button
+                    onClick={() => {
+                      const content = editForm.fullInfo;
+                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                      addEntry(content, 'full_info');
+                      setEditForm({ ...editForm, fullInfo: '' });
+                    }}
+                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                  >
+                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                  </button>
+                </div>
+                <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
+              </div>
+
+              {/* Notes with Add button */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className={`block ${textMuted} text-[10px] font-mono`}>ЗАМЕТКИ</label>
+                  <button
+                    onClick={() => {
+                      const content = editForm.notes;
+                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                      addEntry(content, 'notes');
+                      setEditForm({ ...editForm, notes: '' });
+                    }}
+                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                  >
+                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                  </button>
+                </div>
+                <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Напишите заметку..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
               </div>
             </div>
           </div>
@@ -288,155 +296,78 @@ export function DatabaseView({
     );
   }
 
-  // ===== DETAIL VIEW =====
+  // ===== DETAIL VIEW (лента сообщений) =====
   if (selectedCharacter) {
-    const activeTasks = selectedCharacter.tasks.filter(t => t.status === 'в работе');
-    const completedTasks = selectedCharacter.tasks.filter(t => t.status !== 'в работе');
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
         <div className={`p-3 border-b ${borderColor} flex-shrink-0`}>
-          <button onClick={() => { playAllSound(); setSelectedCharacter(null); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-          <div className="flex gap-5">
-            {/* Left column - Photo + buttons */}
-            <div className="flex-shrink-0 flex flex-col items-center">
-              <div className="flex gap-2 mb-3">
-                <button onClick={() => { playAllSound(); setEditForm({ ...selectedCharacter }); setIsEditing(true); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1 hover:opacity-80 transition-all`}>
-                  <Edit2 className="w-3 h-3" /> ИЗМЕНИТЬ
-                </button>
-                <button onClick={() => deleteCharacter(selectedCharacter.id)} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/40 border-red-700 text-red-400' : 'bg-red-900/20 border-red-800 text-red-500'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>
-                  УДАЛИТЬ
-                </button>
-              </div>
-
-              <div className="relative mb-3">
-                <img
-                  src={selectedCharacter.photo}
-                  alt={selectedCharacter.name}
-                  className="w-40 h-56 object-cover rounded border border-[#2a2a2a] shadow-lg"
-                />
-                <div className="absolute top-0 left-0 right-0 flex justify-center">
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80">
-                    <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)} animate-pulse`}></div>
-                    <span className="text-gray-300 font-mono text-[10px]">{selectedCharacter.status}</span>
-                  </div>
+        <div className="flex-1 overflow-y-auto pda-scrollbar">
+          {/* Header */}
+          <div className={`p-4 border-b ${borderColor}`}>
+            <div className="flex gap-4">
+              <div className="flex-shrink-0">
+                <img src={selectedCharacter.photo} className="w-24 h-32 object-cover rounded border border-[#2a2a2a]" alt="" />
+                <div className="mt-2 flex items-center justify-center gap-1">
+                  <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)} animate-pulse`}></div>
+                  <span className={`${textMuted} font-mono text-[10px]`}>{selectedCharacter.status}</span>
                 </div>
               </div>
-
-              <div className="text-center space-y-1.5 mb-3 w-full">
-                <div className="flex items-center justify-center gap-1.5">
-                  <Calendar className="w-3 h-3 text-gray-600 flex-shrink-0" />
-                  <div className="text-gray-400 font-mono text-[11px]">{selectedCharacter.birthDate}</div>
-                </div>
-                <div className="text-gray-300 font-mono text-sm font-bold">
-                  {selectedCharacter.faction}
-                </div>
-                <div className="text-gray-500 font-mono text-xs">
-                  {selectedCharacter.rank}
-                </div>
+              <div>
+                <h2 className={`${textLight} font-mono text-lg font-bold`}>{selectedCharacter.name || 'Без имени'}</h2>
+                <div className={`${textMuted} font-mono text-xs mt-1`}>{selectedCharacter.faction} • {selectedCharacter.rank}</div>
+                {selectedCharacter.birthDate && <div className={`${textMuted} font-mono text-xs mt-1`}>
+                  <Calendar className="w-3 h-3 inline mr-1" />{selectedCharacter.birthDate}
+                </div>}
+                {selectedCharacter.caseNumber && <div className={`${textMuted} font-mono text-xs mt-1`}>Дело: {selectedCharacter.caseNumber}</div>}
               </div>
             </div>
+          </div>
 
-            {/* Right column - Info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-3 border-b border-[#2a2a2a] pb-2">
-                <h2 className={`text-lg font-mono break-words flex-1 ${textLight}`}>
-                  {selectedCharacter.name || 'Без имени'}
-                </h2>
-                {selectedCharacter.caseNumber && (
-                  <div className="text-gray-400 font-mono text-base ml-3 flex-shrink-0">
-                    {selectedCharacter.caseNumber}
-                  </div>
-                )}
-              </div>
+          {/* Message feed */}
+          <div className="p-4 space-y-3">
+            <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+              <MessageSquare className="w-3 h-3" /> ЗАПИСИ
+            </div>
 
-              <div className="space-y-3">
-                {/* Short Info */}
-                {selectedCharacter.shortInfo && (
-                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
-                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>КРАТКАЯ ИНФОРМАЦИЯ</div>
-                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.shortInfo}</div>
-                  </div>
-                )}
-
-                {/* Tasks */}
-                {selectedCharacter.tasks.length > 0 && (
-                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
-                    <button onClick={() => { playAllSound(); setTasksExpanded(!tasksExpanded); }} className={`w-full flex items-center justify-between ${textMuted} text-[10px] font-mono mb-2 hover:opacity-80 transition-colors`}>
-                      <span>ЗАДАЧИ ({selectedCharacter.tasks.length})</span>
-                      {tasksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </button>
-                    <div className="space-y-2 mt-2">
-                      {activeTasks.map(task => {
-                        const createdAt = task.created_at ? new Date(task.created_at) : null;
-                        const taskDate = createdAt ? `${String(createdAt.getDate()).padStart(2, '0')}.${String(createdAt.getMonth() + 1).padStart(2, '0')}.2009` : '—';
-                        const taskTime = createdAt ? `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}` : '—';
-                        const taskAuthor = task.author_login || 'Аноним';
-                        return (
-                          <div key={task.id} className={`group relative p-3 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded transition-all hover:border-opacity-70`}>
-                            {/* Hover metadata */}
-                            <div className="absolute top-1 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <span className={`text-[9px] font-mono ${isSecret ? 'text-red-600' : 'text-gray-600'}`}>
-                                [{taskDate} | {taskTime} (UTC+3:00) | {taskAuthor}]
-                              </span>
-                            </div>
-                            {/* Status badge */}
-                            <div className="absolute top-2 right-2">
-                              <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'в работе' ? (isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/10' : 'border-yellow-500 text-yellow-400 bg-yellow-500/20') : task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
-                                {task.status}
-                              </div>
-                            </div>
-                            {/* Task description */}
-                            <div className={`text-[11px] pt-4 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
-                          </div>
-                        );
-                      })}
-                      {tasksExpanded && completedTasks.map(task => {
-                        const createdAt = task.created_at ? new Date(task.created_at) : null;
-                        const taskDate = createdAt ? `${String(createdAt.getDate()).padStart(2, '0')}.${String(createdAt.getMonth() + 1).padStart(2, '0')}.2009` : '—';
-                        const taskTime = createdAt ? `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}` : '—';
-                        const taskAuthor = task.author_login || 'Аноним';
-                        return (
-                          <div key={task.id} className={`group relative p-3 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded transition-all hover:border-opacity-70 opacity-60`}>
-                            <div className="absolute top-1 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <span className={`text-[9px] font-mono ${isSecret ? 'text-red-600' : 'text-gray-600'}`}>
-                                [{taskDate} | {taskTime} (UTC+3:00) | {taskAuthor}]
-                              </span>
-                            </div>
-                            <div className="absolute top-2 right-2">
-                              <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
-                                {task.status}
-                              </div>
-                            </div>
-                            <div className={`text-[11px] pt-4 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
-                          </div>
-                        );
-                      })}
+            {loadingEntries ? (
+              <div className={`${textMuted} font-mono text-xs`}>Загрузка записей...</div>
+            ) : entries.length === 0 ? (
+              <div className={`${textMuted} font-mono text-xs`}>Записей пока нет.</div>
+            ) : (
+              entries.map(entry => {
+                const datePrefix = formatEntryDate(entry.created_at);
+                const closingBracket = ']';
+                return (
+                  <div key={entry.id} className="group relative">
+                    {/* Hover: full metadata */}
+                    <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px]`}>
+                        {datePrefix}{entry.author_login}{closingBracket}
+                        {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
+                      </span>
+                    </div>
+                    {/* Message bubble */}
+                    <div className={`p-3 rounded-lg border ${
+                      entry.entry_type === 'task'
+                        ? isSecret ? 'bg-yellow-600/10 border-yellow-600/30' : 'bg-yellow-500/10 border-yellow-500/30'
+                        : entry.entry_type === 'edit'
+                        ? isSecret ? 'bg-blue-600/10 border-blue-600/30' : 'bg-blue-500/10 border-blue-500/30'
+                        : isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'
+                    }`}>
+                      <div className={`${textColor} font-mono text-xs whitespace-pre-wrap break-words`}>{entry.content}</div>
+                      <div className={`mt-1 text-[9px] font-mono ${isSecret ? 'text-red-700' : 'text-gray-600'}`}>
+                        {entry.author_login} • {datePrefix.split(' | ')[1]}
+                      </div>
                     </div>
                   </div>
-                )}
-
-                {/* Full Info */}
-                {selectedCharacter.fullInfo && (
-                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
-                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>ПОЛНАЯ ИНФОРМАЦИЯ</div>
-                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.fullInfo}</div>
-                  </div>
-                )}
-
-                {/* Notes */}
-                {selectedCharacter.notes && (
-                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
-                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>ЗАМЕТКИ</div>
-                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.notes}</div>
-                  </div>
-                )}
-              </div>
-            </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -471,7 +402,7 @@ export function DatabaseView({
           {viewMode === 'cards' ? <List className="w-3.5 h-3.5" /> : <Grid3X3 className="w-3.5 h-3.5" />}
         </button>
         <button
-          onClick={() => { playAllSound(); setIsCreating(true); setIsEditing(true); setEditForm({ id: crypto.randomUUID(), photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', tasks: [], caseNumber: '' }); setTasksExpanded(false); }}
+          onClick={() => { playAllSound(); setIsCreating(true); setIsEditing(true); setEditForm({ id: crypto.randomUUID(), photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', caseNumber: '' }); setTasksExpanded(false); }}
           className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1`}
         >
           <Plus className="w-3 h-3" /> СОЗДАТЬ
@@ -481,7 +412,6 @@ export function DatabaseView({
       {/* Content */}
       <div className="flex-1 overflow-y-auto pda-scrollbar p-3">
         {viewMode === 'cards' ? (
-          /* ===== CARDS VIEW ===== */
           <div className="grid grid-cols-2 gap-3">
             {filteredCharacters.map(char => (
               <div
@@ -489,14 +419,6 @@ export function DatabaseView({
                 className={`p-3 border cursor-pointer transition-all rounded flex flex-col gap-2 relative ${char.status === 'В розыске' ? cardWanted : cardBg}`}
                 onClick={() => { playAllSound(); setSelectedCharacter(char); }}
               >
-                {char.tasks.some(t => t.status === 'в работе') && (
-                  <div className="absolute top-2 right-2 z-10">
-                    <div className={`text-[9px] font-mono px-2 py-1 rounded border ${isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/20' : 'border-yellow-500 text-yellow-400 bg-yellow-500/20'} flex items-center gap-1`}>
-                      <span>задача</span>
-                    </div>
-                  </div>
-                )}
-
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 relative">
                     <img src={char.photo} alt={char.name} className="w-20 h-28 object-cover rounded border border-[#2a2a2a]" />
@@ -536,44 +458,31 @@ export function DatabaseView({
             ))}
           </div>
         ) : (
-          /* ===== LIST VIEW (compact, Slack-like) ===== */
           <div className="space-y-1">
-            {filteredCharacters.map(char => {
-              const activeTasks = char.tasks.filter(t => t.status === 'в работе');
-              return (
-                <div
-                  key={char.id}
-                  className={`p-2.5 border cursor-pointer transition-all rounded flex items-center gap-3 ${char.status === 'В розыске' ? cardWanted : cardBg}`}
-                  onClick={() => { playAllSound(); setSelectedCharacter(char); }}
-                >
-                  {/* Left: info */}
-                  <div className="flex-1 min-w-0">
-                    <div className={`${textLight} font-mono text-sm font-bold truncate`}>
-                      {char.name || 'Без имени'}
-                      {char.status === 'В розыске' && <span className="text-red-500 ml-2 text-xs">[РОЗЫСК]</span>}
-                    </div>
-                    <div className={`${textMuted} font-mono text-[10px] truncate`}>
-                      {char.faction}{char.rank ? ` • ${char.rank}` : ''}
-                    </div>
+            {filteredCharacters.map(char => (
+              <div
+                key={char.id}
+                className={`p-2.5 border cursor-pointer transition-all rounded flex items-center gap-3 ${char.status === 'В розыске' ? cardWanted : cardBg}`}
+                onClick={() => { playAllSound(); setSelectedCharacter(char); }}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className={`${textLight} font-mono text-sm font-bold truncate`}>
+                    {char.name || 'Без имени'}
+                    {char.status === 'В розыске' && <span className="text-red-500 ml-2 text-xs">[РОЗЫСК]</span>}
                   </div>
-                  {/* Right: case number + status + tasks */}
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    {activeTasks.length > 0 && (
-                      <div className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/10' : 'border-yellow-500/50 text-yellow-400 bg-yellow-500/10'}`}>
-                        {activeTasks.length} зад.
-                      </div>
-                    )}
-                    <div className={`text-[10px] font-mono flex items-center gap-1.5`}>
-                      <div className={`w-2 h-2 rounded-full ${getStatusDotColor(char.status)}`}></div>
-                      {char.status}
-                    </div>
-                    {char.caseNumber && (
-                      <div className={`${textMuted} font-mono text-[10px]`}>{char.caseNumber}</div>
-                    )}
+                  <div className={`${textMuted} font-mono text-[10px] truncate`}>
+                    {char.faction}{char.rank ? ` • ${char.rank}` : ''}
                   </div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className={`text-[10px] font-mono flex items-center gap-1.5`}>
+                    <div className={`w-2 h-2 rounded-full ${getStatusDotColor(char.status)}`}></div>
+                    {char.status}
+                  </div>
+                  {char.caseNumber && <div className={`${textMuted} font-mono text-[10px]`}>{char.caseNumber}</div>}
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
