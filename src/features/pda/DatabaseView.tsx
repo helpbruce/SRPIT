@@ -73,7 +73,7 @@ export function DatabaseView({
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
   playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
-  photo1InputRef,
+  photo1InputRef, getTaskPlaceholder,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
 
