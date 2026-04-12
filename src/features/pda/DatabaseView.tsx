@@ -444,7 +444,7 @@ export function DatabaseView({
           {viewMode === 'cards' ? <List className="w-3.5 h-3.5" /> : <Grid3X3 className="w-3.5 h-3.5" />}
         </button>
         <button
-          onClick={() => { playAllSound(); setIsCreating(true); setIsEditing(true); setEditForm({ id: `char-${Date.now()}`, photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', tasks: [], caseNumber: '' }); setTasksExpanded(false); }}
+          onClick={() => { playAllSound(); setIsCreating(true); setIsEditing(true); setEditForm({ id: crypto.randomUUID(), photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', tasks: [], caseNumber: '' }); setTasksExpanded(false); }}
           className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1`}
         >
           <Plus className="w-3 h-3" /> СОЗДАТЬ
