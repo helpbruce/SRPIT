@@ -750,30 +750,55 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Введите логин и пароль');
       return;
     }
-    const { data, error } = await supabase
-      .from('users_local')
-      .select('password_hash, can_access_abd')
-      .eq('login', authEmail)
-      .maybeSingle();
-    if (error) {
-      alert('Ошибка входа: ' + error.message);
-      return;
-    }
-    if (!data || data.password_hash !== authPassword) {
-      alert('Неверный логин или пароль');
-      return;
-    }
-    const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
-    const hasAbd = data.can_access_abd === true;
+    // Пытаемся забрать can_access_abd, но если колонки нет — фоллбэк
+    let hasAbd = false;
     try {
-      localStorage.setItem('pda_login', authEmail);
-      localStorage.setItem('pda_user_role', userRole);
-      localStorage.setItem('pda_can_access_abd', String(hasAbd));
-    } catch {}
-    setCurrentLogin(authEmail);
-    setCurrentUserRole(userRole);
-    setCanAccessAbd(hasAbd);
-    setShowAuthModal(false);
+      const { data, error } = await supabase
+        .from('users_local')
+        .select('password_hash, can_access_abd')
+        .eq('login', authEmail)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data || data.password_hash !== authPassword) {
+        alert('Неверный логин или пароль');
+        return;
+      }
+      hasAbd = data.can_access_abd === true;
+      const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
+      try {
+        localStorage.setItem('pda_login', authEmail);
+        localStorage.setItem('pda_user_role', userRole);
+        localStorage.setItem('pda_can_access_abd', String(hasAbd));
+      } catch {}
+      setCurrentLogin(authEmail);
+      setCurrentUserRole(userRole);
+      setCanAccessAbd(hasAbd);
+      setShowAuthModal(false);
+    } catch (e: any) {
+      // Колонки can_access_abd нет — фоллбэк: просто пароль
+      if (e?.message?.includes('can_access_abd') || e?.message?.includes('column') || e?.message?.includes('does not exist')) {
+        const { data, error } = await supabase
+          .from('users_local')
+          .select('password_hash')
+          .eq('login', authEmail)
+          .maybeSingle();
+        if (error) { alert('Ошибка входа: ' + error.message); return; }
+        if (!data || data.password_hash !== authPassword) { alert('Неверный логин или пароль'); return; }
+        const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
+        hasAbd = authEmail === 'admin'; // admin по умолчанию имеет доступ
+        try {
+          localStorage.setItem('pda_login', authEmail);
+          localStorage.setItem('pda_user_role', userRole);
+          localStorage.setItem('pda_can_access_abd', String(hasAbd));
+        } catch {}
+        setCurrentLogin(authEmail);
+        setCurrentUserRole(userRole);
+        setCanAccessAbd(hasAbd);
+        setShowAuthModal(false);
+      } else {
+        alert('Ошибка входа: ' + (e?.message || 'Неизвестная ошибка'));
+      }
+    }
   };
 
   const handleRegister = async () => {
