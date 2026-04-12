@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, ChevronUp, Trash2, Database, BookOpen, Lock } from 'lucide-react';
+import { X, Database, BookOpen, Lock } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
+import { DatabaseView } from './DatabaseView';
 
 interface Task {
   id: string;
@@ -45,7 +46,7 @@ interface PDAModalProps {
 }
 
 export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
-  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto' | 'secret'>('menu');
+  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto'>('menu');
   // Local auth state
   const [currentLogin, setCurrentLogin] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<'user' | 'admin'>('user');
@@ -55,7 +56,7 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authPassword, setAuthPassword] = useState('');
   const [newSectionName, setNewSectionName] = useState('');
   const [showNewSectionModal, setShowNewSectionModal] = useState(false);
-    
+
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -66,6 +67,8 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
   const [expandedShortInfo, setExpandedShortInfo] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards'); // режим отображения
+  const [activeDatabase, setActiveDatabase] = useState<'main' | 'secret'>('main'); // активная БД
   
   // Bestiary states
   const [bestiaryEntries, setBestiaryEntries] = useState<BestiaryEntry[]>([]);
@@ -75,17 +78,6 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
   const [isEditingBestiary, setIsEditingBestiary] = useState(false);
   const [bestiaryEditForm, setBestiaryEditForm] = useState<BestiaryEntry | null>(null);
-
-  // Secret database (АБД) states
-  const [secretCharacters, setSecretCharacters] = useState<Character[]>([]);
-  const [selectedSecretCharacter, setSelectedSecretCharacter] = useState<Character | null>(null);
-  const [isEditingSecret, setIsEditingSecret] = useState(false);
-  const [isCreatingSecret, setIsCreatingSecret] = useState(false);
-  const [editFormSecret, setEditFormSecret] = useState<Character | null>(null);
-  const [secretSearchQuery, setSecretSearchQuery] = useState('');
-  const [secretTasksExpanded, setSecretTasksExpanded] = useState(false);
-  const [editSecretTasksExpanded, setEditSecretTasksExpanded] = useState(false);
-  const [expandedSecretShortInfo, setExpandedSecretShortInfo] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photo1InputRef = useRef<HTMLInputElement>(null);
@@ -287,14 +279,18 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     };
   }, []);
 
-  // Load secret characters (АБД) from Supabase
-  useEffect(() => {
-    if (!supabase) {
-      const cached = CacheManager.get<Character[]>('secret_characters');
-      if (cached) setSecretCharacters(cached);
-      return;
-    }
+  // Secret characters (АБД) — загрузка только если admin
+  const [secretCharacters, setSecretCharacters] = useState<Character[]>([]);
+  const [selectedSecretCharacter, setSelectedSecretCharacter] = useState<Character | null>(null);
+  const [isEditingSecret, setIsEditingSecret] = useState(false);
+  const [isCreatingSecret, setIsCreatingSecret] = useState(false);
+  const [editFormSecret, setEditFormSecret] = useState<Character | null>(null);
+  const [secretSearchQuery, setSecretSearchQuery] = useState('');
+  const [secretTasksExpanded, setSecretTasksExpanded] = useState(false);
+  const [expandedSecretShortInfo, setExpandedSecretShortInfo] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!supabase || currentUserRole !== 'admin') return;
     let isMounted = true;
     let isLoading = false;
 
@@ -306,33 +302,17 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           .from('secret_characters')
           .select('*')
           .order('updated_at', { ascending: true });
-
-        if (error) {
-          console.error('Failed to load secret_characters:', error);
-          return;
-        }
-
+        if (error) { console.error('Failed to load secret_characters:', error); return; }
         if (!isMounted || !data) return;
-
         const mapped: Character[] = data.map((row: any) => ({
-          id: row.id,
-          photo: row.photo ?? '/icons/nodata.png',
-          name: row.name ?? '',
-          birthDate: row.birthdate ?? '',
-          faction: row.faction ?? '',
-          rank: row.rank ?? '',
-          status: row.status ?? 'Неизвестен',
-          shortInfo: row.shortinfo ?? '',
-          fullInfo: row.fullinfo ?? '',
-          notes: row.notes ?? '',
-          tasks: (row.tasks ?? []) as Task[],
-          caseNumber: row.casenumber ?? '',
+          id: row.id, photo: row.photo ?? '/icons/nodata.png', name: row.name ?? '',
+          birthDate: row.birthdate ?? '', faction: row.faction ?? '', rank: row.rank ?? '',
+          status: row.status ?? 'Неизвестен', shortInfo: row.shortinfo ?? '', fullInfo: row.fullinfo ?? '',
+          notes: row.notes ?? '', tasks: (row.tasks ?? []) as Task[], caseNumber: row.casenumber ?? '',
         }));
         setSecretCharacters(mapped);
         CacheManager.set('secret_characters', mapped, 10 * 60 * 1000);
-      } finally {
-        isLoading = false;
-      }
+      } finally { isLoading = false; }
     };
 
     const cached = CacheManager.get<Character[]>('secret_characters');
@@ -342,23 +322,21 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     const debouncedLoad = debounce(loadSecret, 500);
     const channel = supabase
       .channel('secret_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'secret_characters' },
-        () => { if (isMounted) debouncedLoad(); }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'secret_characters' },
+        () => { if (isMounted) debouncedLoad(); })
       .subscribe();
 
-    return () => {
-      isMounted = false;
-      supabase.removeChannel(channel);
-    };
-  }, []);
+    return () => { isMounted = false; supabase.removeChannel(channel); };
+  }, [currentUserRole]);
 
 
   const filteredCharacters = characters.filter(char => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
+    // Если ищут "задача" — показать только персонажей с активными задачами
+    if (query === 'задача' || query === 'задач') {
+      return char.tasks.some(t => t.status === 'в работе');
+    }
     return (
       char.name.toLowerCase().includes(query) ||
       char.faction.toLowerCase().includes(query) ||
@@ -366,7 +344,8 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       char.status.toLowerCase().includes(query) ||
       char.shortInfo.toLowerCase().includes(query) ||
       char.fullInfo.toLowerCase().includes(query) ||
-      char.caseNumber.toLowerCase().includes(query)
+      char.caseNumber.toLowerCase().includes(query) ||
+      char.tasks.some(t => t.description.toLowerCase().includes(query))
     );
   });
 
@@ -982,26 +961,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             </div>
           )}
 
-          {/* Secret АБД menu — visible only for admin */}
-          {pdaMode === 'menu' && currentUserRole === 'admin' && (
-            <div className="border-t border-[#2a2a2a] flex">
-              <div
-                className="flex-1 bg-gradient-to-br from-red-950/20 to-red-900/10 cursor-pointer hover:from-red-900/30 hover:to-red-800/20 transition-all flex flex-col items-center justify-center gap-4"
-                onClick={() => {
-                  playAllSound();
-                  setPdaMode('secret');
-                }}
-              >
-                <Database className="w-16 h-16 text-red-500" />
-                <div className="text-red-400 font-mono text-lg">АБД</div>
-                <div className="text-red-600 font-mono text-xs">Секретная база данных</div>
-                <div className="text-red-500/50 font-mono text-xs bg-red-950/30 px-3 py-1 rounded border border-red-900/50">
-                  {secretCharacters.length} записей
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Crypto Mode */}
           {pdaMode === 'crypto' && (
             <CryptoEncryptor
@@ -1010,681 +969,47 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             />
           )}
 
-          {/* Secret АБД Mode */}
-          {pdaMode === 'secret' && !selectedSecretCharacter && !isEditingSecret && (
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
-              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
-                <div className="flex items-center gap-2 flex-1">
-                  <Search className="w-4 h-4 text-red-700" />
-                  <input
-                    type="text"
-                    value={secretSearchQuery}
-                    onChange={(e) => setSecretSearchQuery(e.target.value)}
-                    placeholder="Поиск по АБД..."
-                    className="flex-1 bg-transparent border-none text-red-400 font-mono text-xs placeholder:text-red-800 focus:outline-none"
-                  />
-                </div>
-                <button
-                  onClick={() => { playAllSound(); setIsCreatingSecret(true); setIsEditingSecret(true); setEditFormSecret({ id: `sec-${Date.now()}`, photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', tasks: [], caseNumber: '' }); }}
-                  className="ml-2 px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" /> СОЗДАТЬ
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto pda-scrollbar p-3">
-                <div className="grid grid-cols-2 gap-3">
-                  {secretCharacters.filter(c => !secretSearchQuery || c.name.toLowerCase().includes(secretSearchQuery.toLowerCase()) || c.faction.toLowerCase().includes(secretSearchQuery.toLowerCase())).map(char => (
-                    <div
-                      key={char.id}
-                      className="p-3 bg-red-950/20 border border-red-900/30 cursor-pointer hover:bg-red-900/30 hover:border-red-800/50 transition-all rounded flex flex-col gap-2 relative"
-                      onClick={() => { playAllSound(); setSelectedSecretCharacter(char); }}
-                    >
-                      <div className="flex gap-3">
-                        <div className="flex-shrink-0">
-                          <img src={char.photo} className="w-12 h-12 object-cover rounded border border-red-900/30" alt="" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-red-300 font-mono text-xs font-bold truncate">{char.name || 'Без имени'}</div>
-                          <div className="text-red-600 font-mono text-[10px]">{char.faction}</div>
-                          <div className="text-red-700 font-mono text-[10px]">{char.rank}</div>
-                        </div>
-                      </div>
-                      {char.tasks.some(t => t.status === 'в работе') && (
-                        <div className="text-[9px] font-mono px-2 py-0.5 rounded border border-yellow-600/50 text-yellow-500 bg-yellow-600/10 self-start">задача</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+          {/* Database Mode */}
+          {pdaMode === 'database' && (
+            <DatabaseView
+              activeDatabase={activeDatabase}
+              setActiveDatabase={setActiveDatabase}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              characters={activeDatabase === 'main' ? characters : secretCharacters}
+              setCharacters={activeDatabase === 'main' ? setCharacters : setSecretCharacters}
+              searchQuery={activeDatabase === 'main' ? searchQuery : secretSearchQuery}
+              setSearchQuery={activeDatabase === 'main' ? setSearchQuery : setSecretSearchQuery}
+              filteredCharacters={activeDatabase === 'main'
+                ? filteredCharacters
+                : secretCharacters.filter(c => !secretSearchQuery || c.name.toLowerCase().includes(secretSearchQuery.toLowerCase()) || c.faction.toLowerCase().includes(secretSearchQuery.toLowerCase()) || c.caseNumber.toLowerCase().includes(secretSearchQuery.toLowerCase()))
+              }
+              selectedCharacter={activeDatabase === 'main' ? selectedCharacter : selectedSecretCharacter}
+              setSelectedCharacter={activeDatabase === 'main' ? setSelectedCharacter : setSelectedSecretCharacter}
+              isEditing={activeDatabase === 'main' ? isEditing : isEditingSecret}
+              setIsEditing={activeDatabase === 'main' ? setIsEditing : setIsEditingSecret}
+              isCreating={activeDatabase === 'main' ? isCreating : isCreatingSecret}
+              setIsCreating={activeDatabase === 'main' ? setIsCreating : setIsCreatingSecret}
+              editForm={activeDatabase === 'main' ? editForm : editFormSecret}
+              setEditForm={activeDatabase === 'main' ? setEditForm : setEditFormSecret}
+              tasksExpanded={activeDatabase === 'main' ? tasksExpanded : false}
+              setTasksExpanded={activeDatabase === 'main' ? setTasksExpanded : setSecretTasksExpanded}
+              expandedShortInfo={activeDatabase === 'main' ? expandedShortInfo : expandedSecretShortInfo}
+              setExpandedShortInfo={activeDatabase === 'main' ? setExpandedShortInfo : setExpandedSecretShortInfo}
+              playAllSound={playAllSound}
+              playSaveSound={playSaveSound}
+              currentLogin={currentLogin}
+              supabase={supabase}
+              isSecret={activeDatabase === 'secret'}
+              photo1InputRef={photo1InputRef}
+              handlePhotoChange={handlePhotoChange}
+              handlePhotoURL={handlePhotoURL}
+              getTaskPlaceholder={getTaskPlaceholder}
+            />
           )}
 
-          {/* Secret АБД - Detail View */}
-          {pdaMode === 'secret' && selectedSecretCharacter && !isEditingSecret && (
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
-              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
-                <button onClick={() => { playAllSound(); setSelectedSecretCharacter(null); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1">
-                  <ChevronLeft className="w-3 h-3" /> Назад
-                </button>
-                <div className="flex gap-2">
-                  <button onClick={() => { playAllSound(); startEdit(selectedSecretCharacter); setPdaMode('database'); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1">
-                    <Edit2 className="w-3 h-3" /> РЕД.
-                  </button>
-                  <button onClick={() => { if (confirm('Удалить из АБД?')) { const updated = secretCharacters.filter(c => c.id !== selectedSecretCharacter.id); setSecretCharacters(updated); CacheManager.set('secret_characters', updated, 10 * 60 * 1000); if (supabase) supabase.from('secret_characters').delete().eq('id', selectedSecretCharacter.id); setSelectedSecretCharacter(null); } }} className="px-2 py-1 bg-red-900/50 border border-red-700 rounded text-red-400 font-mono text-xs hover:bg-red-800/70 flex items-center gap-1">
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-                <div className="flex gap-4 mb-4">
-                  <img src={selectedSecretCharacter.photo} className="w-24 h-24 object-cover rounded border-2 border-red-900/50" alt="" />
-                  <div>
-                    <h2 className="text-red-300 font-mono text-lg font-bold">{selectedSecretCharacter.name}</h2>
-                    <div className="text-red-600 font-mono text-xs">{selectedSecretCharacter.faction} • {selectedSecretCharacter.rank}</div>
-                    <div className="text-red-500 font-mono text-xs mt-1">Статус: {selectedSecretCharacter.status}</div>
-                    {selectedSecretCharacter.caseNumber && <div className="text-red-700 font-mono text-xs">Дело: {selectedSecretCharacter.caseNumber}</div>}
-                  </div>
-                </div>
-                {selectedSecretCharacter.shortInfo && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">КРАТКАЯ ИНФО</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.shortInfo}</pre></div>}
-                {selectedSecretCharacter.fullInfo && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">ПОЛНАЯ ИНФО</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.fullInfo}</pre></div>}
-                {selectedSecretCharacter.notes && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">ЗАМЕТКИ</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.notes}</pre></div>}
-                {selectedSecretCharacter.tasks.length > 0 && (
-                  <div>
-                    <div className="text-red-600 font-mono text-[10px] mb-2">ЗАДАЧИ ({selectedSecretCharacter.tasks.filter(t => t.status === 'в работе').length} активн.)</div>
-                    {selectedSecretCharacter.tasks.map(t => (
-                      <div key={t.id} className={`p-2 mb-1 rounded border text-xs font-mono ${t.status === 'в работе' ? 'border-yellow-600/30 bg-yellow-600/10 text-yellow-400' : t.status === 'провалено' ? 'border-red-600/30 bg-red-600/10 text-red-400' : 'border-gray-600/30 bg-gray-600/10 text-gray-400'}`}>
-                        {t.description}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Secret АБД - Edit Mode (reuse database edit form) */}
-          {pdaMode === 'secret' && isEditingSecret && editFormSecret && (
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
-              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
-                <button onClick={() => { playAllSound(); setIsEditingSecret(false); setIsCreatingSecret(false); setEditFormSecret(null); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">ОТМЕНА</button>
-                <button onClick={() => { playSaveSound(); if (isCreatingSecret) { setSecretCharacters(prev => [...prev, editFormSecret]); setSelectedSecretCharacter(editFormSecret); setIsCreatingSecret(false); } else { setSecretCharacters(prev => prev.map(c => c.id === editFormSecret.id ? editFormSecret : c)); setSelectedSecretCharacter(editFormSecret); } const payload = { id: editFormSecret.id, photo: editFormSecret.photo || null, name: editFormSecret.name || '', birthdate: editFormSecret.birthDate || null, faction: editFormSecret.faction || null, rank: editFormSecret.rank || null, status: editFormSecret.status || 'Неизвестен', shortinfo: editFormSecret.shortInfo || null, fullinfo: editFormSecret.fullInfo || null, notes: editFormSecret.notes || null, casenumber: editFormSecret.caseNumber || null, tasks: editFormSecret.tasks || null, author_login: currentLogin || null, updated_at: new Date().toISOString() }; const updated = isCreatingSecret ? [...secretCharacters, editFormSecret] : secretCharacters.map(c => c.id === editFormSecret.id ? editFormSecret : c); setSecretCharacters(updated); CacheManager.set('secret_characters', updated, 10 * 60 * 1000); if (supabase) supabase.from('secret_characters').upsert(payload, { onConflict: 'id' }).then(({ error }) => { if (error) { console.error('Failed to upsert secret:', error); setSecretCharacters(secretCharacters); CacheManager.set('secret_characters', secretCharacters, 10 * 60 * 1000); } }); setIsEditingSecret(false); setEditFormSecret(null); }} className="px-3 py-1 bg-green-900/30 border border-green-800 rounded text-green-400 font-mono text-xs hover:bg-green-900/50">СОХРАНИТЬ</button>
-              </div>
-              <div className="flex-1 overflow-y-auto pda-scrollbar p-4 space-y-3">
-                <div className="flex gap-3 items-center">
-                  <img src={editFormSecret.photo} className="w-20 h-20 object-cover rounded border-2 border-red-900/50" alt="" />
-                  <div className="flex gap-2">
-                    <button onClick={() => photo1InputRef.current?.click()} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">ФОТО</button>
-                    <button onClick={handlePhotoURL} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">URL</button>
-                  </div>
-                </div>
-                <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file && editFormSecret) { const reader = new FileReader(); reader.onload = (ev) => { if (ev.target?.result) setEditFormSecret({ ...editFormSecret, photo: ev.target.result as string }); }; reader.readAsDataURL(file); } }} />
-                <input type="text" placeholder="Имя" value={editFormSecret.name} onChange={(e) => setEditFormSecret({ ...editFormSecret, name: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
-                <input type="text" placeholder="Фракция" value={editFormSecret.faction} onChange={(e) => setEditFormSecret({ ...editFormSecret, faction: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
-                <input type="text" placeholder="Ранг" value={editFormSecret.rank} onChange={(e) => setEditFormSecret({ ...editFormSecret, rank: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
-                <select value={editFormSecret.status} onChange={(e) => setEditFormSecret({ ...editFormSecret, status: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs">
-                  <option value="Активен">Активен</option><option value="Пропал">Пропал</option><option value="Мертв">Мертв</option><option value="В розыске">В розыске</option><option value="Неизвестен">Неизвестен</option>
-                </select>
-                <input type="text" placeholder="Дата рождения" value={editFormSecret.birthDate} onChange={(e) => setEditFormSecret({ ...editFormSecret, birthDate: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
-                <input type="text" placeholder="Номер дела" value={editFormSecret.caseNumber} onChange={(e) => setEditFormSecret({ ...editFormSecret, caseNumber: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
-                <textarea placeholder="Краткая инфо" value={editFormSecret.shortInfo} onChange={(e) => setEditFormSecret({ ...editFormSecret, shortInfo: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={3} />
-                <textarea placeholder="Полная инфо" value={editFormSecret.fullInfo} onChange={(e) => setEditFormSecret({ ...editFormSecret, fullInfo: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={5} />
-                <textarea placeholder="Заметки" value={editFormSecret.notes} onChange={(e) => setEditFormSecret({ ...editFormSecret, notes: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={3} />
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-red-600 font-mono text-[10px]">ЗАДАЧИ</span>
-                    <button onClick={() => { const newTask: Task = { id: `task-${Date.now()}`, description: '', status: 'в работе' }; setEditFormSecret({ ...editFormSecret, tasks: [newTask, ...editFormSecret.tasks] }); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">+ ДОБАВИТЬ</button>
-                  </div>
-                  {editFormSecret.tasks.map(t => (
-                    <div key={t.id} className="flex gap-2 mb-2 items-start">
-                      <select value={t.status} onChange={(e) => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.map(tk => tk.id === t.id ? { ...tk, status: e.target.value as Task['status'] } : tk) })} className="p-1 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-[10px]">
-                        <option value="в работе">В работе</option><option value="провалено">Провалено</option><option value="выполнено">Выполнено</option>
-                      </select>
-                      <input type="text" placeholder={getTaskPlaceholder(t.status)} value={t.description} onChange={(e) => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.map(tk => tk.id === t.id ? { ...tk, description: e.target.value } : tk) })} className="flex-1 p-1 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-[10px] placeholder:text-red-800" />
-                      <button onClick={() => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.filter(tk => tk.id !== t.id) })} className="text-red-600 hover:text-red-400">✕</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Database Mode - List View */}
-          {pdaMode === 'database' && !selectedCharacter && !isEditing && (
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
-      <div className="p-3 border-b border-[#2a2a2a] flex items-center gap-2 flex-shrink-0">
-                <Search className="w-4 h-4 text-gray-600" />
-                <input 
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                  }}
-                  placeholder="Поиск..."
-                  className="flex-1 bg-transparent border-none text-gray-400 font-mono text-xs placeholder:text-gray-700 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex-1 overflow-y-auto pda-scrollbar p-3">
-                <div className="grid grid-cols-2 gap-3">
-                  {filteredCharacters.map(char => (
-                    
-<div
-  key={char.id}
-  className={`
-    p-3 border cursor-pointer transition-all rounded flex flex-col gap-2 relative
-    ${char.status === 'В розыске'
-      ? 'bg-red-900/20 border-red-700 hover:bg-red-900/30'
-      : 'bg-[#0a0a0a] border-[#2a2a2a] hover:bg-[#0f0f0f] hover:border-[#3a3a3a]'
-    }
-  `}
-  onClick={() => {
-    playAllSound();
-    setSelectedCharacter(char);
-  }}
->
-
-
-                      {hasActiveTask(char) && (
-                        <div className="absolute top-25 right-3 z-10">
-                          <div className="text-[9px] font-mono px-2 py-1 rounded border border-yellow-500 text-yellow-400 bg-yellow-500/20 flex items-center gap-1">
-                            <span>задача</span>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="flex gap-3">
-                        <div className="flex-shrink-0 relative">
-                          <img 
-                            src={char.photo} 
-                            alt={char.name}
-                            className="w-20 h-28 object-cover rounded border border-[#2a2a2a]"
-                          />
-                          <div className="absolute top-1 left-0 right-0 flex justify-center">
-                            <div className="flex items-center gap-1 px-2 py-1 rounded bg-black/70">
-                              <div className={`w-1.5 h-1.5 rounded-full ${getStatusDotColor(char.status)}`}></div>
-                              <span className="text-gray-300 font-mono text-[9px]">{char.status}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0 flex flex-col">
-                          <div className="text-gray-300 font-mono text-lg mb-1 truncate">{char.name}</div>
-                            <div className="text-gray-300 font-mono text-base mb-0 truncate">
-                            {char.faction}
-                          </div>
-             
-                          <div className="text-gray-500 font-mono text-xs mb-3 truncate">
-                            {char.rank}
-                          </div>
-                             <div className="text-gray-400 font-mono text-xs mb-1 truncate">
-                            {char.birthDate}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div 
-                        className="cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playAllSound();
-                          setExpandedShortInfo(expandedShortInfo === char.id ? null : char.id);
-                        }}
-                      >
-                        <div className={`text-gray-500 font-mono text-xs break-words ${
-                          expandedShortInfo === char.id ? '' : 'line-clamp-2'
-                        }`}>
-                          {char.shortInfo}
-                        </div>
-                        {char.shortInfo.length > 60 && (
-                          <div className="text-gray-600 font-mono text-[8px] mt-1 text-right">
-                            {expandedShortInfo === char.id ? '▲ Скрыть' : '▼ Показать'}
-                          </div>
-                        )}
-                        
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={createNewCharacter}
-                className="p-3 bg-[#2a2a2a] border-t border-[#3a3a3a] hover:bg-[#3a3a3a] transition-all flex items-center justify-center gap-2 text-gray-400 font-mono text-xs flex-shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                ДОБАВИТЬ
-              </button>
-            </div>
-          )}
-
-          {/* Database Detail View - continues on next comment due to length */}
-{/* Character Detail View */}
-{pdaMode === 'database' && selectedCharacter && !isEditing && (
-  <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
-    <div className="p-3 border-b border-[#2a2a2a] flex-shrink-0">
-      <button
-        onClick={() => {
-          playAllSound();
-          setSelectedCharacter(null);
-        }}
-        className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all flex items-center gap-1 text-gray-400 font-mono text-xs"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        НАЗАД
-      </button>
-    </div>
-
-    <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-      <div className="flex gap-5">
-        <div className="flex-shrink-0 flex flex-col items-center">
-          <div className="flex gap-2 mb-3">
-            <button
-              onClick={() => startEdit(selectedCharacter)}
-              className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all flex items-center justify-center gap-1 text-gray-400 font-mono text-[10px]"
-            >
-              <Edit2 className="w-3 h-3" />
-              ИЗМЕНИТЬ
-            </button>
-            <button
-              onClick={() => deleteCharacter(selectedCharacter.id)}
-              className="px-3 py-1.5 bg-red-900/20 border border-red-800 rounded hover:bg-red-900/40 transition-all text-red-500 font-mono text-[10px]"
-            >
-              УДАЛИТЬ
-            </button>
-          </div>
-
-          <div className="relative mb-3">
-            <img 
-              src={selectedCharacter.photo}
-              alt={selectedCharacter.name}
-              className="w-40 h-56 object-cover rounded border border-[#2a2a2a] shadow-lg"
-            />
-            <div className="absolute top-0 left-0 right-0 flex justify-center">
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80">
-                <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)} animate-pulse`}></div>
-                <span className="text-gray-300 font-mono text-[10px]">{selectedCharacter.status}</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="text-center space-y-1.5 mb-3 w-full">
-            <div className="flex items-center justify-center gap-1.5">
-              <Calendar className="w-3 h-3 text-gray-600 flex-shrink-0" />
-              <div className="text-gray-400 font-mono text-[11px]">{selectedCharacter.birthDate}</div>
-            </div>
-            <div className="text-gray-300 font-mono text-sm font-bold">
-              {selectedCharacter.faction}
-            </div>
-            <div className="text-gray-500 font-mono text-xs">
-              {selectedCharacter.rank}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between mb-3 border-b border-[#2a2a2a] pb-2">
-            <h2 className="text-lg font-mono text-gray-300 break-words flex-1">
-              {selectedCharacter.name}
-            </h2>
-            {selectedCharacter.caseNumber && (
-              <div className="text-gray-400 font-mono text-base ml-3 flex-shrink-0">
-                {selectedCharacter.caseNumber}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <div className="p-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded">
-              <div className="text-gray-500 text-[10px] font-mono mb-2">КРАТКАЯ ИНФОРМАЦИЯ</div>
-              <div className="text-gray-300 text-[11px] break-words whitespace-pre-wrap">{selectedCharacter.shortInfo}</div>
-            </div>
-
-            {selectedCharacter.tasks.length > 0 && (
-              <div className="p-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded">
-                <button
-                  onClick={() => {
-                    playAllSound();
-                    setTasksExpanded(!tasksExpanded);
-                  }}
-                  className="w-full flex items-center justify-between text-gray-500 text-[10px] font-mono mb-2 hover:text-gray-400 transition-colors"
-                >
-                  <span>ЗАДАЧИ ({selectedCharacter.tasks.length})</span>
-                  {tasksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-                
-                {(() => {
-                  const activeTasks = getActiveTasks(selectedCharacter);
-                  const completedTasks = getCompletedTasks(selectedCharacter);
-                  
-                  return (
-                    <div className="space-y-2 mt-2">
-                      {activeTasks.map(task => (
-                        <div key={task.id} className="p-2 bg-[#050505] border border-[#2a2a2a] rounded relative">
-                          <div className="absolute top-2 right-2">
-                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${getTaskStatusColor(task.status)}`}>
-                              {task.status}
-                            </div>
-                          </div>
-                          <div className="text-gray-300 text-[11px] pr-20 break-words whitespace-pre-wrap">{task.description || 'Без описания'}</div>
-                        </div>
-                      ))}
-
-                      {tasksExpanded && completedTasks.map(task => (
-                        <div key={task.id} className="p-2 bg-[#050505] border border-[#2a2a2a] rounded relative">
-                          <div className="absolute top-2 right-2">
-                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${getTaskStatusColor(task.status)}`}>
-                              {task.status}
-                            </div>
-                          </div>
-                          <div className="text-gray-300 text-[11px] pr-20 break-words whitespace-pre-wrap">{task.description || 'Без описания'}</div>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            <div className="p-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded">
-              <div className="text-gray-500 text-[10px] font-mono mb-2">ПОЛНАЯ ИНФОРМАЦИЯ</div>
-              <div className="text-gray-300 text-[11px] break-words whitespace-pre-wrap">{selectedCharacter.fullInfo}</div>
-            </div>
-
-            {selectedCharacter.notes && (
-              <div className="p-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded">
-                <div className="text-gray-500 text-[10px] font-mono mb-2">ЗАМЕТКИ</div>
-                <div className="text-gray-300 text-[11px] break-words whitespace-pre-wrap">{selectedCharacter.notes}</div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Character Edit Mode - skipping for brevity, keeping existing code */}
-{pdaMode === 'database' && isEditing && editForm && (
-  <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
-    <div className="p-3 border-b border-[#2a2a2a] flex items-center justify-between flex-shrink-0">
-      <h2 className="text-sm font-mono text-gray-400">
-        {isCreating ? 'НОВЫЙ ПЕРСОНАЖ' : 'РЕДАКТИРОВАНИЕ'}
-      </h2>
-      <div className="flex gap-2">
-        <button
-          onClick={() => {
-            playAllSound();
-            setIsEditing(false);
-            setIsCreating(false);
-            setEditForm(null);
-            setEditTasksExpanded(false);
-          }}
-          className="px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-xs"
-        >
-          ОТМЕНА
-        </button>
-        <button
-          onClick={saveCharacter}
-          className="px-3 py-1.5 bg-gray-700/30 border border-gray-600 rounded hover:bg-gray-700/50 transition-all flex items-center gap-1 text-gray-300 font-mono text-xs"
-        >
-          <Save className="w-4 h-4" />
-          СОХРАНИТЬ
-        </button>
-      </div>
-    </div>
-
-    <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-      <div className="flex gap-4">
-        <div className="flex-shrink-0">
-          <div className="mb-3">
-            <label className="block text-gray-500 text-[10px] font-mono mb-1 text-center">НОМЕР ДЕЛА</label>
-            <input 
-              type="text"
-              value={editForm.caseNumber}
-              onChange={(e) => {
-                setEditForm({...editForm, caseNumber: e.target.value});
-              }}
-              placeholder="88005553535"
-              className="w-40 p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none text-center placeholder:text-gray-700"
-            />
-          </div>
-
-          <img 
-            src={editForm.photo}
-            alt="Preview"
-            className="w-40 h-56 object-cover rounded border border-[#2a2a2a] mb-3"
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                playAllSound();
-                fileInputRef.current?.click();
-              }}
-              className="flex-1 px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px]"
-            >
-              ФАЙЛ
-            </button>
-            <button
-              onClick={handlePhotoURL}
-              className="flex-1 px-3 py-1.5 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px]"
-            >
-              URL
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 space-y-3">
-          <div>
-            <label className="block text-gray-500 text-[10px] font-mono mb-1">ФИО</label>
-            <input 
-              type="text"
-              value={editForm.name}
-              onChange={(e) => {
-                setEditForm({...editForm, name: e.target.value});
-              }}
-              placeholder="Иванов Иван Иванович"
-              className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-gray-500 text-[10px] font-mono mb-1">ДАТА РОЖДЕНИЯ</label>
-              <input 
-                type="text"
-                value={editForm.birthDate}
-                onChange={(e) => {
-                  setEditForm({...editForm, birthDate: e.target.value});
-                }}
-                placeholder="ДД.ММ.ГГГГ"
-                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-500 text-[10px] font-mono mb-1">СТАТУС</label>
-              <select
-                value={editForm.status}
-                onChange={(e) => {
-                  playAllSound();
-                  setEditForm({...editForm, status: e.target.value});
-                }}
-                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none"
-              >
-                <option>Активен</option>
-                <option>Пропал</option>
-                <option>Неизвестен</option>
-                <option>Мертв</option>
-                <option>В розыске</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-gray-500 text-[10px] font-mono mb-1">ГРУППИРОВКА</label>
-              <input 
-                type="text"
-                value={editForm.faction}
-                onChange={(e) => {
-                  setEditForm({...editForm, faction: e.target.value});
-                }}
-                placeholder="Чистое Небо"
-                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-500 text-[10px] font-mono mb-1">ЗВАНИЕ</label>
-              <input 
-                type="text"
-                value={editForm.rank}
-                onChange={(e) => {
-                  setEditForm({...editForm, rank: e.target.value});
-                }}
-                placeholder="Новичок/Сержант"
-                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-gray-500 text-[10px] font-mono mb-1">КРАТКАЯ ИНФОРМАЦИЯ</label>
-<textarea
-  value={editForm.shortInfo}
-  onChange={(e) => {
-    let value = e.target.value;
-
-    // Вставляем шаблон только один раз для этого персонажа
-    if (!shortInfoInsertedMap[editForm.id]) {
-      value = shortInfoTemplate + value;
-
-      setShortInfoInsertedMap(prev => ({
-        ...prev,
-        [editForm.id]: true
-      }));
-    }
-
-    setEditForm({
-      ...editForm,
-      shortInfo: value
-    });
-  }}
-  placeholder="Краткая информация"
-  rows={6} // ← УВЕЛИЧИВАЕТ ВЫСОТУ
-  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none resize-none placeholder:text-gray-700"
-/>
-
-
-
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <button
-                onClick={() => {
-                  playAllSound();
-                  setEditTasksExpanded(!editTasksExpanded);
-                }}
-                className="flex items-center gap-1 text-gray-500 text-[10px] font-mono hover:text-gray-400"
-              >
-                ЗАДАЧИ ({editForm.tasks.length})
-                {editTasksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={addTask}
-                className="px-3 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px] flex items-center gap-1"
-              >
-                <Plus className="w-3 h-3" />
-                Добавить
-              </button>
-            </div>
-            
-            {editTasksExpanded && (
-              <div className="space-y-2 p-3 bg-[#0a0a0a] border border-[#2a2a2a] rounded max-h-72 overflow-y-auto pda-scrollbar">
-                {editForm.tasks.map(task => (
-                  <div key={task.id} className="p-2 bg-[#050505] border border-[#2a2a2a] rounded">
-                    <div className="flex items-start gap-2 mb-2">
-                      <select
-                        value={task.status}
-                        onChange={(e) => updateTask(task.id, { status: e.target.value as Task['status'] })}
-                        className="flex-shrink-0 p-1.5 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-[10px] focus:border-[#3a3a3a] focus:outline-none"
-                      >
-                        <option value="в работе">в работе</option>
-                        <option value="провалено">провалено</option>
-                        <option value="выполнено">выполнено</option>
-                      </select>
-                      <button
-                        onClick={() => deleteTask(task.id)}
-                        className="flex-shrink-0 p-1.5 bg-red-900/20 border border-red-800 rounded hover:bg-red-900/40 transition-all"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
-                    </div>
-<textarea
-  value={task.description}
-  onChange={(e) => {
-  playAllSound();
-
-  let value = e.target.value;
-
-  // Добавляем timestamp только если поле было пустым и начинаем ввод
-  if (task.description === '' && value.trim() !== '') {
-    value = generateTimestamp(editForm?.name) + value;
-  }
-
-  updateTask(task.id, { description: value });
-}}
-
-  placeholder={getTaskPlaceholder(task.status)}
-  className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-[11px] focus:border-[#3a3a3a] focus:outline-none resize-none placeholder:text-gray-700"
-/>
-
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-gray-500 text-[10px] font-mono mb-1">ПОЛНАЯ ИНФОРМАЦИЯ</label>
-            <textarea 
-              value={editForm.fullInfo}
-              onChange={(e) => {
-                playAllSound();
-                setEditForm({...editForm, fullInfo: e.target.value});
-              }}
-              placeholder="Введите  всю имеющуюся  информацию на данный субъект"
-              rows={6}
-              className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none resize-none placeholder:text-gray-700"
-            />
-          </div>
-
-          <div>
-            <label className="block text-gray-500 text-[10px] font-mono mb-1">ЗАМЕТКИ</label>
-            <textarea
-              value={editForm.notes}
-              onChange={(e) => {
-                playAllSound();
-                let value = e.target.value;
-
-                // Добавляем timestamp только если поле было пустым и начинаем ввод
-                if (editForm.notes === '' && value.trim() !== '') {
-                  value = generateTimestamp(editForm?.name) + value;
-                }
-
-                setEditForm({...editForm, notes: value});
-              }}
-              placeholder="Введите  свои заметки на данного субъекта"
-              rows={4}
-              className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none resize-none placeholder:text-gray-700"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Bestiary Mode - List View with Search */}
-{pdaMode === 'bestiary' && !selectedEntry && !isEditingBestiary && (
+          {/* Bestiary Mode - List View with Search */}
+          {pdaMode === 'bestiary' && !selectedEntry && !isEditingBestiary && (
   <div className="flex-1 flex flex-col overflow-hidden bg-[#050505]">
     <div className="p-3 border-b border-[#2a2a2a] flex-shrink-0 space-y-3">
       <div className="flex items-center gap-2">

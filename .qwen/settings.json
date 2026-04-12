@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(\"c:\\program files\\git\\cmd\\git.exe\" *)"
+    ]
+  },
+  "$version": 3
+}

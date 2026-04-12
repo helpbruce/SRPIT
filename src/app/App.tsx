@@ -5,7 +5,6 @@ const USBModal = lazy(() => import('../features/usb/USBModal').then(m => ({ defa
 const PDAModal = lazy(() => import('../features/pda/PDAModal').then(m => ({ default: m.PDAModal })));
 const AddFileModal = lazy(() => import('../features/folder/AddFileModal').then(m => ({ default: m.AddFileModal })));
 const WelcomeGuide = lazy(() => import('../features/welcome/WelcomeGuide').then(m => ({ default: m.WelcomeGuide })));
-const MapModal = lazy(() => import('../features/map/MapModal').then(m => ({ default: m.MapModal })));
 import { getImagePath } from '../shared/lib/PlaceholderImages';
 const FolderViewer = lazy(() => import('../features/folder/FolderViewer').then(m => ({ default: m.FolderViewer })));
 import { supabase } from '../shared/lib/supabaseClient';
@@ -21,7 +20,6 @@ interface Document {
 export default function App() {
   const [isUSBOpen, setIsUSBOpen] = useState(false);
   const [isPDAOpen, setIsPDAOpen] = useState(false);
-  const [isMapOpen, setIsMapOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addContext, setAddContext] = useState<'folder' | 'usb'>('folder');
   const [marlboroClicked, setMarlboroClicked] = useState(false);
@@ -79,7 +77,7 @@ export default function App() {
   });
 
   // Определяем активные блокировки
-  const isAnyModalOpen = isUSBOpen || isPDAOpen || isMapOpen || isAddModalOpen || fullscreenIndex !== null;
+  const isAnyModalOpen = isUSBOpen || isPDAOpen || isAddModalOpen || fullscreenIndex !== null;
 
   // Load documents from Supabase + кеш + realtime с debounce
   useEffect(() => {
@@ -411,44 +409,18 @@ export default function App() {
         />
       )}
 
-      {/* Map Corner - with proper shape detection */}
-      <div 
-        className="fixed top-0 left-0 w-48 h-48 cursor-pointer transition-all duration-[1000ms] hover:scale-110 group"
-        onClick={() => !isAnyModalOpen && setIsMapOpen(true)}
-        style={{
-          clipPath: 'polygon(0 0, 100% 0, 0 100%)',
-          pointerEvents: isAnyModalOpen ? 'none' : 'auto',
-          zIndex: 1200,
-          opacity: isUSBOpen ? 0 : 1,
-          transition: 'opacity 0s',
-        }}
-      >
-        <div 
-          className="w-full h-full"
-          style={{
-            backgroundImage: `url(${getImagePath('map_corner.png')})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'top left',
-            filter: 'drop-shadow(10px 10px 15px rgba(0,0,0,0.6)) drop-shadow(5px 5px 10px rgba(0,0,0,0.4))',
-          }}
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/0 via-yellow-500/0 to-yellow-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" 
-          style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
-        />
-      </div>
-
       {/* Screen Wrapper */}
-      <div 
+      <div
         className="w-screen h-screen flex items-center justify-center relative"
-        style={{ 
-          pointerEvents: isMapOpen || isUSBOpen ? 'none' : 'auto',
+        style={{
+          pointerEvents: isUSBOpen ? 'none' : 'auto',
           opacity: isUSBOpen ? 0 : 1,
           transition: 'opacity 0s',
         }}
       >
         {/* Folder Viewer */}
         <Suspense fallback={null}>
-          <FolderViewer 
+          <FolderViewer
             isOpen={isFolderOpen}
             onToggle={() => !isAnyModalOpen && setIsFolderOpen(prev => !prev)}
           >
@@ -673,7 +645,7 @@ export default function App() {
         <div 
           className="fixed bottom-0 left-[155px] z-[9000]"
           style={{ 
-            pointerEvents: isMapOpen || isUSBOpen ? 'none' : 'auto',
+            pointerEvents: isUSBOpen ? 'none' : 'auto',
             opacity: isUSBOpen ? 0 : 1,
             transition: 'opacity 0s',
           }}
@@ -714,12 +686,7 @@ export default function App() {
 
       {/* Modals */}
       <Suspense fallback={null}>
-        <MapModal 
-          isOpen={isMapOpen}
-          onClose={() => setIsMapOpen(false)}
-        />
-
-        <AddFileModal 
+        <AddFileModal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
           onAdd={handleConfirmAdd}
