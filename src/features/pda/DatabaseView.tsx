@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar, Save } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
