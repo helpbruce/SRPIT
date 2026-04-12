@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 const DocumentStack = lazy(() => import('../features/folder/DocumentStack').then(m => ({ default: m.DocumentStack })));
 const USBModal = lazy(() => import('../features/usb/USBModal').then(m => ({ default: m.USBModal })));
-const PDAModal = lazy(() => import('../features/pda/PDAModal').then(m => ({ default: m.PDAModal })));
+import { PDAModal } from '../features/pda/PDAModal';
 const AddFileModal = lazy(() => import('../features/folder/AddFileModal').then(m => ({ default: m.AddFileModal })));
 const WelcomeGuide = lazy(() => import('../features/welcome/WelcomeGuide').then(m => ({ default: m.WelcomeGuide })));
 import { getImagePath } from '../shared/lib/PlaceholderImages';
@@ -507,13 +507,11 @@ export default function App() {
 
           {isPDAOpen && (
             <div className="absolute inset-0 flex items-center justify-center absolute top-51 right-19 left-8 bottom-52 mix-blend-screen">
-              <Suspense fallback={null}>
-                <PDAModal 
-                  isOpen={isPDAOpen}
-                  onClose={handlePDAClose}
-                  isMuted={isMuted}
-                />
-              </Suspense>
+              <PDAModal
+                isOpen={isPDAOpen}
+                onClose={handlePDAClose}
+                isMuted={isMuted}
+              />
             </div>
           )}
         </div>
