@@ -172,13 +172,16 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     try {
       const saved = localStorage.getItem('pda_login');
       const savedRole = localStorage.getItem('pda_user_role') as 'user' | 'admin' | null;
+      const savedAbd = localStorage.getItem('pda_can_access_abd');
       if (saved) {
         setCurrentLogin(saved);
         setCurrentUserRole(savedRole || 'user');
+        setCanAccessAbd(savedAbd === 'true');
         setShowAuthModal(false);
       } else {
         setCurrentLogin(null);
         setCurrentUserRole('user');
+        setCanAccessAbd(false);
         setShowAuthModal(true);
       }
     } catch {
@@ -290,7 +293,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const [expandedSecretShortInfo, setExpandedSecretShortInfo] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supabase || currentUserRole !== 'admin') return;
+    if (!supabase || !canAccessAbd) return;
     let isMounted = true;
     let isLoading = false;
 
@@ -327,7 +330,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       .subscribe();
 
     return () => { isMounted = false; supabase.removeChannel(channel); };
-  }, [currentUserRole]);
+  }, [canAccessAbd]);
 
 
   const filteredCharacters = characters.filter(char => {
@@ -740,6 +743,8 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
   // Hash helper
   // Local auth actions
+  const [canAccessAbd, setCanAccessAbd] = useState(false);
+
   const handleLogin = async () => {
     if (!authEmail || !authPassword) {
       alert('Введите логин и пароль');
@@ -747,7 +752,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     }
     const { data, error } = await supabase
       .from('users_local')
-      .select('password_hash')
+      .select('password_hash, can_access_abd')
       .eq('login', authEmail)
       .maybeSingle();
     if (error) {
@@ -759,12 +764,15 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       return;
     }
     const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
-    try { 
+    const hasAbd = data.can_access_abd === true;
+    try {
       localStorage.setItem('pda_login', authEmail);
       localStorage.setItem('pda_user_role', userRole);
+      localStorage.setItem('pda_can_access_abd', String(hasAbd));
     } catch {}
     setCurrentLogin(authEmail);
     setCurrentUserRole(userRole);
+    setCanAccessAbd(hasAbd);
     setShowAuthModal(false);
   };
 
@@ -804,12 +812,14 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   const handleLogout = async () => {
-    try { 
+    try {
       localStorage.removeItem('pda_login');
       localStorage.removeItem('pda_user_role');
+      localStorage.removeItem('pda_can_access_abd');
     } catch {}
     setCurrentLogin(null);
     setCurrentUserRole('user');
+    setCanAccessAbd(false);
     setShowAuthModal(true);
   };
 
@@ -1001,9 +1011,8 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               currentLogin={currentLogin}
               supabase={supabase}
               isSecret={activeDatabase === 'secret'}
+              canAccessAbd={canAccessAbd}
               photo1InputRef={photo1InputRef}
-              handlePhotoChange={handlePhotoChange}
-              handlePhotoURL={handlePhotoURL}
               getTaskPlaceholder={getTaskPlaceholder}
             />
           )}

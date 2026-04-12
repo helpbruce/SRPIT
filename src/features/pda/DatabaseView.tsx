@@ -51,9 +51,8 @@ interface DatabaseViewProps {
   currentLogin: string | null;
   supabase: any;
   isSecret: boolean;
+  canAccessAbd: boolean;
   photo1InputRef: React.RefObject<HTMLInputElement>;
-  handlePhotoChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  handlePhotoURL: () => void;
   getTaskPlaceholder: (status: Task['status']) => string;
 }
 
@@ -73,8 +72,8 @@ export function DatabaseView({
   selectedCharacter, setSelectedCharacter, isEditing, setIsEditing,
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
-  playAllSound, playSaveSound, currentLogin, supabase, isSecret,
-  photo1InputRef, handlePhotoChange, handlePhotoURL, getTaskPlaceholder,
+  playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
+  photo1InputRef,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
 
@@ -193,9 +192,9 @@ export function DatabaseView({
               <img src={editForm.photo} alt="Preview" className="w-40 h-56 object-cover rounded border border-[#2a2a2a] mb-3" />
               <div className="flex gap-2">
                 <button onClick={() => { playAllSound(); photo1InputRef.current?.click(); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>ФАЙЛ</button>
-                <button onClick={handlePhotoURL} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>URL</button>
+                <button onClick={() => { const url = prompt('Введите URL фотографии:'); if (url && editForm) setEditForm({ ...editForm, photo: url }); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>URL</button>
               </div>
-              <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+              <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file && editForm) { const reader = new FileReader(); reader.onload = (ev) => { if (ev.target?.result) setEditForm({ ...editForm, photo: ev.target.result as string }); }; reader.readAsDataURL(file); } }} />
             </div>
 
             {/* Right - Fields */}
@@ -410,13 +409,15 @@ export function DatabaseView({
           placeholder="Поиск... (введи 'задача' для поиска)"
           className={`flex-1 bg-transparent border-none font-mono text-xs ${textColor} placeholder:opacity-40 focus:outline-none`}
         />
-        {/* АБД/БД toggle — только admin */}
-        <button
-          onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); }}
-          className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
-        >
-          {isSecret ? 'АБД' : 'БД'}
-        </button>
+        {/* АБД/БД toggle — только если есть доступ */}
+        {canAccessAbd && (
+          <button
+            onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); }}
+            className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
+          >
+            {isSecret ? 'АБД' : 'БД'}
+          </button>
+        )}
         {/* View mode toggle */}
         <button
           onClick={() => setViewMode(viewMode === 'cards' ? 'list' : 'cards')}
