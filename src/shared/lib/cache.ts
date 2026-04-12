@@ -16,8 +16,15 @@ export class CacheManager {
         ttl,
       };
       localStorage.setItem(this.prefix + key, JSON.stringify(item));
-    } catch (e) {
-      console.warn('Failed to cache data:', e);
+    } catch (e: any) {
+      // Quota exceeded — очищаем старые кеши и пробуем снова
+      try {
+        this.clearAll();
+        const item = { data, timestamp: Date.now(), ttl };
+        localStorage.setItem(this.prefix + key, JSON.stringify(item));
+      } catch (e2) {
+        console.warn('Cache quota exceeded, skipping:', key);
+      }
     }
   }
 
