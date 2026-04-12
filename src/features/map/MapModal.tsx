@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, ZoomIn, ZoomOut, Hand, Pen, Eraser } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, ZoomIn, ZoomOut, Hand, Pen, Eraser, Edit3, Eye } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
+import { debounce } from '../../shared/lib/realtimeUtils';
 
 interface Marker {
   id: string;
@@ -59,6 +60,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
   const [drawWidth, setDrawWidth] = useState(3);
   const drawingsRef = useRef<DrawingPath[]>([]);
   const pendingEraseRef = useRef<DrawingPath[]>([]);
+  const [editMode, setEditMode] = useState(false); // Режим внесения изменений
 
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(
     null
@@ -152,17 +154,19 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
     load();
 
+    // Realtime только в режиме редактирования — чтобы не ломало при просмотре
+    const debouncedLoad = debounce(load, 500);
     const channel = supabase
       .channel('map_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'map_markers' },
-        () => load()
+        () => { if (editMode) debouncedLoad(); }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'map_drawings' },
-        () => load()
+        () => { if (editMode) debouncedLoad(); }
       )
       .subscribe();
 
@@ -170,7 +174,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [editMode]);
 
   // loading overlay
   useEffect(() => {
@@ -723,6 +727,19 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         <X className="w-5 h-5 text-red-400" />
       </button>
 
+      {/* Edit Mode Toggle */}
+      <button
+        className={`fixed top-4 left-4 px-3 py-2 border-2 rounded-lg font-mono text-xs flex items-center gap-2 z-[100005] transition-all ${
+          editMode
+            ? 'bg-green-900/70 border-green-700 text-green-300 hover:bg-green-800/90'
+            : 'bg-[#0f0f0f]/95 border-[#3a3a3a] text-gray-400 hover:border-[#4a4a4a]'
+        }`}
+        onClick={() => setEditMode(!editMode)}
+      >
+        {editMode ? <Edit3 className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        {editMode ? 'РЕДАКТИРОВАНИЕ' : 'ПРОСМОТР'}
+      </button>
+
       {/* Toolbar */}
       <div
         className="fixed top-4 left-1/2 -translate-x-1/2 bg-[#0f0f0f]/95 border-2 border-[#3a3a3a] rounded-lg p-2 flex gap-2 z-[100004] items-center"
@@ -871,12 +888,12 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
       {/* Map Container */}
       <div
-        className="w-full h-full flex items-center justify-center overflow-hidden"
+        className="w-full h-full flex items-center justify-center overflow-hidden relative"
         style={{ opacity: showLoading ? 0 : 1 }}
       >
         <div
           ref={mapRef}
-          className="relative overflow-hidden"
+          className="absolute inset-0"
           style={{
             cursor: isDrawing
               ? 'none'
@@ -889,8 +906,6 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
               : selectedTool === 'eraser'
               ? 'none'
               : 'crosshair',
-            width: `100vw`,
-            height: `100vh`,
             transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
             transformOrigin: 'center center',
             transition:
@@ -907,13 +922,14 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
             setCursorPos(null);
           }}
         >
-          {/* Fullscreen image without cropping */}
+          {/* Map image */}
           <img
             src="/icons/map.png"
             alt="Карта"
             className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
             loading="eager"
             decoding="async"
+            draggable={false}
           />
 
           {/* Canvas */}

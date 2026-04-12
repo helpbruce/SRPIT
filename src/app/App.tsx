@@ -34,8 +34,21 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState(false);
 
-  const siteAuthUsername = import.meta.env.VITE_SITE_USERNAME ?? 'admin';
-  const siteAuthPassword = import.meta.env.VITE_SITE_PASSWORD ?? 'admin';
+  // 5 аккаунтов для доступа к сайту
+  const siteAccounts = [
+    { login: 'admin', password: 'admin', role: 'admin' as const },
+    { login: 'user1', password: '1234', role: 'user' as const },
+    { login: 'user2', password: '1234', role: 'user' as const },
+    { login: 'user3', password: '1234', role: 'user' as const },
+    { login: 'user4', password: '1234', role: 'user' as const },
+  ];
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('srpit_admin') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [siteAuthorized, setSiteAuthorized] = useState<boolean>(() => {
     try {
       return localStorage.getItem('srpit_site_authorized') === 'true';
@@ -280,10 +293,13 @@ export default function App() {
   };
 
   const handleSiteLogin = () => {
-    if (siteLoginValue === siteAuthUsername && sitePasswordValue === siteAuthPassword) {
+    const account = siteAccounts.find(a => a.login === siteLoginValue && a.password === sitePasswordValue);
+    if (account) {
       try {
         localStorage.setItem('srpit_site_authorized', 'true');
+        localStorage.setItem('srpit_admin', account.role === 'admin' ? 'true' : 'false');
       } catch {}
+      setIsAdmin(account.role === 'admin');
       setSiteAuthorized(true);
       setSiteAuthError('');
       return;
@@ -295,7 +311,9 @@ export default function App() {
   const handleSiteLogout = () => {
     try {
       localStorage.removeItem('srpit_site_authorized');
+      localStorage.removeItem('srpit_admin');
     } catch {}
+    setIsAdmin(false);
     setSiteAuthorized(false);
     setSiteLoginValue('');
     setSitePasswordValue('');
@@ -573,11 +591,12 @@ export default function App() {
       {isUSBOpen && (
         <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(90vw,800px)] h-[min(85vh,600px)] z-[10000]">
           <Suspense fallback={null}>
-            <USBModal 
+            <USBModal
               isOpen={isUSBOpen}
               onClose={handleUSBClose}
               onAddFile={() => handleAddFile('usb')}
               isMuted={isMuted}
+              isAdmin={isAdmin}
             />
           </Suspense>
         </div>
@@ -636,12 +655,9 @@ export default function App() {
 
           <button
             onClick={() => {
-              const newDocs = documents.filter((_, i) => i !== fullscreenIndex);
-              setDocuments(newDocs);
-              if (newDocs.length === 0) {
+              handleDeleteDocument(fullscreenIndex);
+              if (documents.length - 1 <= fullscreenIndex) {
                 setFullscreenIndex(null);
-              } else {
-                setFullscreenIndex(Math.min(fullscreenIndex, newDocs.length - 1));
               }
             }}
             className="fixed bottom-8 left-8 px-6 py-3 bg-red-900/70 border-2 border-red-700 text-red-400 rounded-lg hover:bg-red-800/90 transition-all z-10 font-mono flex items-center gap-2"

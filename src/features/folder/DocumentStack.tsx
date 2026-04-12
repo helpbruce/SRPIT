@@ -35,7 +35,8 @@ export function DocumentStack({
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartX, setDragStartX] = useState(0);
-  const DELETE_THRESHOLD = 200; // pixels to swipe right to delete
+  const DELETE_THRESHOLD = 80; // pixels to swipe right to delete (reduced)
+  const MAX_DRAG = 150; // maximum drag distance
 
   const nextPage = useCallback(() => {
     if (!isFolderOpen) return;
@@ -96,9 +97,9 @@ export function DocumentStack({
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging) {
       const offset = e.clientX - dragStartX;
-      // Only allow dragging to the right
+      // Only allow dragging to the right, capped at MAX_DRAG
       if (offset > 0) {
-        setDragOffset(offset);
+        setDragOffset(Math.min(offset, MAX_DRAG));
       } else {
         setDragOffset(0);
       }

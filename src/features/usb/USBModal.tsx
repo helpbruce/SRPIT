@@ -25,9 +25,10 @@ interface USBModalProps {
   onClose: () => void;
   onAddFile: (context: 'usb') => void;
   isMuted: boolean;
+  isAdmin?: boolean;
 }
 
-export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps) {
+export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBModalProps) {
   const [usbView, setUsbView] = useState<'root' | 'photo' | 'video' | 'audio'>('root');
   const [usbFiles, setUsbFiles] = useState<USBFiles>({
     photo: [],
@@ -354,6 +355,22 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
 
   const openViewer = async (file: USBFile, index: number, type: 'photo' | 'video' | 'audio') => {
     playAllSound();
+
+    // Проверяем пароль для защищённых файлов
+    if (file.is_protected && file.password_hash && !unlocked.has(file.id ?? '')) {
+      const pwd = prompt('Файл защищён паролем. Введите пароль:');
+      if (!pwd) return;
+      if (pwd !== file.password_hash) {
+        alert('Неверный пароль');
+        return;
+      }
+      // Разблокируем файл
+      const next = new Set(unlocked);
+      next.add(file.id ?? '');
+      setUnlocked(next);
+      try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
+    }
+
     setViewerFile(file);
     setViewerIndex(index);
     setCurrentType(type);
@@ -524,18 +541,22 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                 </div>
               ) : (
                 <>
-                  <button
-                    className="mb-3 px-3 py-1 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] cursor-pointer hover:bg-[#d0d0d0] active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white flex items-center gap-2 text-black font-bold text-xs shadow-[1px_1px_0_rgba(0,0,0,0.2)]"
-                    onClick={() => {
-                      playAllSound();
-                      setUsbView('root');
-                    }}
-                    style={{ fontFamily: 'Tahoma, sans-serif' }}
-                  >
-                    <ChevronLeft className="w-3 h-3" />
-                    Назад
-                  </button>
-                  
+                  <div className="sticky top-0 z-10 pb-2 bg-white" style={{
+                    backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(0,0,0,0.03) 1px, rgba(0,0,0,0.03) 2px)'
+                  }}>
+                    <button
+                      className="px-3 py-1 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] cursor-pointer hover:bg-[#d0d0d0] active:border-t-[#404040] active:border-l-[#404040] active:border-r-white active:border-b-white flex items-center gap-2 text-black font-bold text-xs shadow-[1px_1px_0_rgba(0,0,0,0.2)]"
+                      onClick={() => {
+                        playAllSound();
+                        setUsbView('root');
+                      }}
+                      style={{ fontFamily: 'Tahoma, sans-serif' }}
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                      Назад
+                    </button>
+                  </div>
+
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-2">
                     {usbFiles[usbView].map((file, index) => (
                       <div
@@ -550,26 +571,40 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                         )}
                         {usbView === 'photo' ? (
                           <div className="w-full h-16 border border-gray-500 bg-white flex items-center justify-center overflow-hidden">
-                            <img 
-                              src={file.url} 
-                              alt={file.name}
-                              className="w-full h-full object-cover"
-                            />
+                            {file.is_protected && !unlocked.has(file.id ?? '') ? (
+                              <div className="flex items-center justify-center w-full h-full bg-[#2a2a2a]">
+                                <span className="text-2xl">🔒</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={file.url}
+                                alt={file.name}
+                                className="w-full h-full object-cover"
+                              />
+                            )}
                           </div>
                         ) : usbView === 'video' ? (
                           <div className="w-full h-16 border border-gray-500 bg-black flex items-center justify-center text-3xl">
-                            📹
+                            {file.is_protected && !unlocked.has(file.id ?? '') ? (
+                              <span className="text-2xl">🔒</span>
+                            ) : (
+                              '📹'
+                            )}
                           </div>
                         ) : (
                           <div className="w-full h-16 border border-gray-500 bg-white flex items-center justify-center text-3xl">
-                            🎵
+                            {file.is_protected && !unlocked.has(file.id ?? '') ? (
+                              <span className="text-2xl">🔒</span>
+                            ) : (
+                              '🎵'
+                            )}
                           </div>
                         )}
                         <div className="text-[10px] font-mono text-black text-center truncate w-full px-1 bg-white border border-gray-400">
                           {file.name}
                         </div>
                         <div className="text-[9px] text-gray-700 font-mono">{file.createdAt}</div>
-                        {file.is_protected && file.password_hash && (
+                        {file.is_protected && file.password_hash && isAdmin && (
                           <div className="text-[9px] text-red-700 font-mono break-all">Пароль: {file.password_hash}</div>
                         )}
                       </div>
@@ -729,48 +764,36 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                   </button>
                 )}
                 {viewerFile?.id && viewerFile?.is_protected && (
-                  <>
-                    <button
-                      onClick={async () => {
-                        const pwd = prompt('Введите текущий пароль для снятия защиты:');
-                        if (!pwd || !viewerFile?.id) return;
-                        if (pwd !== viewerFile.password_hash) { alert('Неверный пароль'); return; }
-                        setViewerFile(v => v ? { ...v, is_protected: false, password_hash: null, protected_hint: null } : v);
-                        setUsbFiles(prev => {
-                          if (!currentType) return prev;
-                          const copy: USBFiles = { photo: [...prev.photo], video: [...prev.video], audio: [...prev.audio] };
-                          const arr = copy[currentType];
-                          const i = arr.findIndex(f => f.id === viewerFile!.id);
-                          if (i !== -1) arr[i] = { ...arr[i], is_protected: false, password_hash: null, protected_hint: null };
-                          CacheManager.set('usb_files', copy, 10 * 60 * 1000);
-                          return copy;
-                        });
-                        if (viewerFile.id) {
-                          const next = new Set(unlocked);
-                          next.delete(viewerFile.id);
-                          setUnlocked(next);
-                          try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
-                        }
-                        if (supabase) {
-                          await supabase.from('usb_files').update({ is_protected: false, password_hash: null, protected_hint: null }).eq('id', viewerFile.id);
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
-                      style={{ fontFamily: 'Tahoma, sans-serif' }}
-                    >
-                      🔓 Снять защиту
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!viewerFile?.password_hash) return;
-                        alert(`Текущий пароль: ${viewerFile.password_hash}`);
-                      }}
-                      className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
-                      style={{ fontFamily: 'Tahoma, sans-serif' }}
-                    >
-                      👁️ Показать пароль
-                    </button>
-                  </>
+                  <button
+                    onClick={async () => {
+                      const pwd = prompt('Введите текущий пароль для снятия защиты:');
+                      if (!pwd || !viewerFile?.id) return;
+                      if (pwd !== viewerFile.password_hash) { alert('Неверный пароль'); return; }
+                      setViewerFile(v => v ? { ...v, is_protected: false, password_hash: null, protected_hint: null } : v);
+                      setUsbFiles(prev => {
+                        if (!currentType) return prev;
+                        const copy: USBFiles = { photo: [...prev.photo], video: [...prev.video], audio: [...prev.audio] };
+                        const arr = copy[currentType];
+                        const i = arr.findIndex(f => f.id === viewerFile!.id);
+                        if (i !== -1) arr[i] = { ...arr[i], is_protected: false, password_hash: null, protected_hint: null };
+                        CacheManager.set('usb_files', copy, 10 * 60 * 1000);
+                        return copy;
+                      });
+                      if (viewerFile.id) {
+                        const next = new Set(unlocked);
+                        next.delete(viewerFile.id);
+                        setUnlocked(next);
+                        try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
+                      }
+                      if (supabase) {
+                        await supabase.from('usb_files').update({ is_protected: false, password_hash: null, protected_hint: null }).eq('id', viewerFile.id);
+                      }
+                    }}
+                    className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
+                    style={{ fontFamily: 'Tahoma, sans-serif' }}
+                  >
+                    🔓 Снять защиту
+                  </button>
                 )}
                 {viewerIndex > 0 && (
                   <button
@@ -790,6 +813,8 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                     След &gt;
                   </button>
                 )}
+              </div>
+              <div className="flex gap-2 items-center">
                 <button
                   onClick={deleteFile}
                   className="px-2 py-0.5 bg-[#c0c0c0] border-2 border-t-white border-l-white border-r-[#404040] border-b-[#404040] text-xs hover:bg-[#d0d0d0]"
@@ -797,9 +822,9 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                 >
                   🗑️ Удалить
                 </button>
-              </div>
-              <div className="text-[10px] text-gray-700 font-mono">
-                {viewerIndex + 1} из {currentType ? usbFiles[currentType].length : 0}
+                <div className="text-[10px] text-gray-700 font-mono">
+                  {viewerIndex + 1} из {currentType ? usbFiles[currentType].length : 0}
+                </div>
               </div>
             </div>
           </div>

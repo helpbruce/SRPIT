@@ -45,7 +45,7 @@ interface PDAModalProps {
 }
 
 export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
-  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto'>('menu');
+  const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto' | 'secret'>('menu');
   // Local auth state
   const [currentLogin, setCurrentLogin] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<'user' | 'admin'>('user');
@@ -75,6 +75,17 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null);
   const [isEditingBestiary, setIsEditingBestiary] = useState(false);
   const [bestiaryEditForm, setBestiaryEditForm] = useState<BestiaryEntry | null>(null);
+
+  // Secret database (АБД) states
+  const [secretCharacters, setSecretCharacters] = useState<Character[]>([]);
+  const [selectedSecretCharacter, setSelectedSecretCharacter] = useState<Character | null>(null);
+  const [isEditingSecret, setIsEditingSecret] = useState(false);
+  const [isCreatingSecret, setIsCreatingSecret] = useState(false);
+  const [editFormSecret, setEditFormSecret] = useState<Character | null>(null);
+  const [secretSearchQuery, setSecretSearchQuery] = useState('');
+  const [secretTasksExpanded, setSecretTasksExpanded] = useState(false);
+  const [editSecretTasksExpanded, setEditSecretTasksExpanded] = useState(false);
+  const [expandedSecretShortInfo, setExpandedSecretShortInfo] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photo1InputRef = useRef<HTMLInputElement>(null);
@@ -267,6 +278,74 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bestiary_entries' },
         debouncedLoad
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Load secret characters (АБД) from Supabase
+  useEffect(() => {
+    if (!supabase) {
+      const cached = CacheManager.get<Character[]>('secret_characters');
+      if (cached) setSecretCharacters(cached);
+      return;
+    }
+
+    let isMounted = true;
+    let isLoading = false;
+
+    const loadSecret = async () => {
+      if (isLoading) return;
+      isLoading = true;
+      try {
+        const { data, error } = await supabase
+          .from('secret_characters')
+          .select('*')
+          .order('updated_at', { ascending: true });
+
+        if (error) {
+          console.error('Failed to load secret_characters:', error);
+          return;
+        }
+
+        if (!isMounted || !data) return;
+
+        const mapped: Character[] = data.map((row: any) => ({
+          id: row.id,
+          photo: row.photo ?? '/icons/nodata.png',
+          name: row.name ?? '',
+          birthDate: row.birthdate ?? '',
+          faction: row.faction ?? '',
+          rank: row.rank ?? '',
+          status: row.status ?? 'Неизвестен',
+          shortInfo: row.shortinfo ?? '',
+          fullInfo: row.fullinfo ?? '',
+          notes: row.notes ?? '',
+          tasks: (row.tasks ?? []) as Task[],
+          caseNumber: row.casenumber ?? '',
+        }));
+        setSecretCharacters(mapped);
+        CacheManager.set('secret_characters', mapped, 10 * 60 * 1000);
+      } finally {
+        isLoading = false;
+      }
+    };
+
+    const cached = CacheManager.get<Character[]>('secret_characters');
+    if (cached && isMounted) setSecretCharacters(cached);
+    loadSecret();
+
+    const debouncedLoad = debounce(loadSecret, 500);
+    const channel = supabase
+      .channel('secret_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'secret_characters' },
+        () => { if (isMounted) debouncedLoad(); }
       )
       .subscribe();
 
@@ -886,7 +965,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               </div>
 
               {/* Right - Bestiary */}
-              <div 
+              <div
                 className="flex-1 bg-gradient-to-bl from-[#0a0a0a] to-[#1a1a1a] cursor-pointer hover:from-[#1a1a1a] hover:to-[#2a2a2a] transition-all flex flex-col items-center justify-center gap-4"
                 onClick={() => {
                   playAllSound();
@@ -903,12 +982,170 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             </div>
           )}
 
+          {/* Secret АБД menu — visible only for admin */}
+          {pdaMode === 'menu' && currentUserRole === 'admin' && (
+            <div className="border-t border-[#2a2a2a] flex">
+              <div
+                className="flex-1 bg-gradient-to-br from-red-950/20 to-red-900/10 cursor-pointer hover:from-red-900/30 hover:to-red-800/20 transition-all flex flex-col items-center justify-center gap-4"
+                onClick={() => {
+                  playAllSound();
+                  setPdaMode('secret');
+                }}
+              >
+                <Database className="w-16 h-16 text-red-500" />
+                <div className="text-red-400 font-mono text-lg">АБД</div>
+                <div className="text-red-600 font-mono text-xs">Секретная база данных</div>
+                <div className="text-red-500/50 font-mono text-xs bg-red-950/30 px-3 py-1 rounded border border-red-900/50">
+                  {secretCharacters.length} записей
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Crypto Mode */}
           {pdaMode === 'crypto' && (
             <CryptoEncryptor
               onBack={() => { playAllSound(); setPdaMode('menu'); }}
               isMuted={isMuted}
             />
+          )}
+
+          {/* Secret АБД Mode */}
+          {pdaMode === 'secret' && !selectedSecretCharacter && !isEditingSecret && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
+              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
+                <div className="flex items-center gap-2 flex-1">
+                  <Search className="w-4 h-4 text-red-700" />
+                  <input
+                    type="text"
+                    value={secretSearchQuery}
+                    onChange={(e) => setSecretSearchQuery(e.target.value)}
+                    placeholder="Поиск по АБД..."
+                    className="flex-1 bg-transparent border-none text-red-400 font-mono text-xs placeholder:text-red-800 focus:outline-none"
+                  />
+                </div>
+                <button
+                  onClick={() => { playAllSound(); setIsCreatingSecret(true); setIsEditingSecret(true); setEditFormSecret({ id: `sec-${Date.now()}`, photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', tasks: [], caseNumber: '' }); }}
+                  className="ml-2 px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" /> СОЗДАТЬ
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto pda-scrollbar p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {secretCharacters.filter(c => !secretSearchQuery || c.name.toLowerCase().includes(secretSearchQuery.toLowerCase()) || c.faction.toLowerCase().includes(secretSearchQuery.toLowerCase())).map(char => (
+                    <div
+                      key={char.id}
+                      className="p-3 bg-red-950/20 border border-red-900/30 cursor-pointer hover:bg-red-900/30 hover:border-red-800/50 transition-all rounded flex flex-col gap-2 relative"
+                      onClick={() => { playAllSound(); setSelectedSecretCharacter(char); }}
+                    >
+                      <div className="flex gap-3">
+                        <div className="flex-shrink-0">
+                          <img src={char.photo} className="w-12 h-12 object-cover rounded border border-red-900/30" alt="" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-red-300 font-mono text-xs font-bold truncate">{char.name || 'Без имени'}</div>
+                          <div className="text-red-600 font-mono text-[10px]">{char.faction}</div>
+                          <div className="text-red-700 font-mono text-[10px]">{char.rank}</div>
+                        </div>
+                      </div>
+                      {char.tasks.some(t => t.status === 'в работе') && (
+                        <div className="text-[9px] font-mono px-2 py-0.5 rounded border border-yellow-600/50 text-yellow-500 bg-yellow-600/10 self-start">задача</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Secret АБД - Detail View */}
+          {pdaMode === 'secret' && selectedSecretCharacter && !isEditingSecret && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
+              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
+                <button onClick={() => { playAllSound(); setSelectedSecretCharacter(null); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1">
+                  <ChevronLeft className="w-3 h-3" /> Назад
+                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => { playAllSound(); startEdit(selectedSecretCharacter); setPdaMode('database'); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs hover:bg-red-900/50 flex items-center gap-1">
+                    <Edit2 className="w-3 h-3" /> РЕД.
+                  </button>
+                  <button onClick={() => { if (confirm('Удалить из АБД?')) { const updated = secretCharacters.filter(c => c.id !== selectedSecretCharacter.id); setSecretCharacters(updated); CacheManager.set('secret_characters', updated, 10 * 60 * 1000); if (supabase) supabase.from('secret_characters').delete().eq('id', selectedSecretCharacter.id); setSelectedSecretCharacter(null); } }} className="px-2 py-1 bg-red-900/50 border border-red-700 rounded text-red-400 font-mono text-xs hover:bg-red-800/70 flex items-center gap-1">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
+                <div className="flex gap-4 mb-4">
+                  <img src={selectedSecretCharacter.photo} className="w-24 h-24 object-cover rounded border-2 border-red-900/50" alt="" />
+                  <div>
+                    <h2 className="text-red-300 font-mono text-lg font-bold">{selectedSecretCharacter.name}</h2>
+                    <div className="text-red-600 font-mono text-xs">{selectedSecretCharacter.faction} • {selectedSecretCharacter.rank}</div>
+                    <div className="text-red-500 font-mono text-xs mt-1">Статус: {selectedSecretCharacter.status}</div>
+                    {selectedSecretCharacter.caseNumber && <div className="text-red-700 font-mono text-xs">Дело: {selectedSecretCharacter.caseNumber}</div>}
+                  </div>
+                </div>
+                {selectedSecretCharacter.shortInfo && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">КРАТКАЯ ИНФО</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.shortInfo}</pre></div>}
+                {selectedSecretCharacter.fullInfo && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">ПОЛНАЯ ИНФО</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.fullInfo}</pre></div>}
+                {selectedSecretCharacter.notes && <div className="mb-3"><div className="text-red-600 font-mono text-[10px] mb-1">ЗАМЕТКИ</div><pre className="text-red-400 font-mono text-xs whitespace-pre-wrap">{selectedSecretCharacter.notes}</pre></div>}
+                {selectedSecretCharacter.tasks.length > 0 && (
+                  <div>
+                    <div className="text-red-600 font-mono text-[10px] mb-2">ЗАДАЧИ ({selectedSecretCharacter.tasks.filter(t => t.status === 'в работе').length} активн.)</div>
+                    {selectedSecretCharacter.tasks.map(t => (
+                      <div key={t.id} className={`p-2 mb-1 rounded border text-xs font-mono ${t.status === 'в работе' ? 'border-yellow-600/30 bg-yellow-600/10 text-yellow-400' : t.status === 'провалено' ? 'border-red-600/30 bg-red-600/10 text-red-400' : 'border-gray-600/30 bg-gray-600/10 text-gray-400'}`}>
+                        {t.description}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Secret АБД - Edit Mode (reuse database edit form) */}
+          {pdaMode === 'secret' && isEditingSecret && editFormSecret && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-[#0a0505]">
+              <div className="p-3 border-b border-red-900/30 flex items-center justify-between flex-shrink-0">
+                <button onClick={() => { playAllSound(); setIsEditingSecret(false); setIsCreatingSecret(false); setEditFormSecret(null); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">ОТМЕНА</button>
+                <button onClick={() => { playSaveSound(); if (isCreatingSecret) { setSecretCharacters(prev => [...prev, editFormSecret]); setSelectedSecretCharacter(editFormSecret); setIsCreatingSecret(false); } else { setSecretCharacters(prev => prev.map(c => c.id === editFormSecret.id ? editFormSecret : c)); setSelectedSecretCharacter(editFormSecret); } const payload = { id: editFormSecret.id, photo: editFormSecret.photo || null, name: editFormSecret.name || '', birthdate: editFormSecret.birthDate || null, faction: editFormSecret.faction || null, rank: editFormSecret.rank || null, status: editFormSecret.status || 'Неизвестен', shortinfo: editFormSecret.shortInfo || null, fullinfo: editFormSecret.fullInfo || null, notes: editFormSecret.notes || null, casenumber: editFormSecret.caseNumber || null, tasks: editFormSecret.tasks || null, author_login: currentLogin || null, updated_at: new Date().toISOString() }; const updated = isCreatingSecret ? [...secretCharacters, editFormSecret] : secretCharacters.map(c => c.id === editFormSecret.id ? editFormSecret : c); setSecretCharacters(updated); CacheManager.set('secret_characters', updated, 10 * 60 * 1000); if (supabase) supabase.from('secret_characters').upsert(payload, { onConflict: 'id' }).then(({ error }) => { if (error) { console.error('Failed to upsert secret:', error); setSecretCharacters(secretCharacters); CacheManager.set('secret_characters', secretCharacters, 10 * 60 * 1000); } }); setIsEditingSecret(false); setEditFormSecret(null); }} className="px-3 py-1 bg-green-900/30 border border-green-800 rounded text-green-400 font-mono text-xs hover:bg-green-900/50">СОХРАНИТЬ</button>
+              </div>
+              <div className="flex-1 overflow-y-auto pda-scrollbar p-4 space-y-3">
+                <div className="flex gap-3 items-center">
+                  <img src={editFormSecret.photo} className="w-20 h-20 object-cover rounded border-2 border-red-900/50" alt="" />
+                  <div className="flex gap-2">
+                    <button onClick={() => photo1InputRef.current?.click()} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">ФОТО</button>
+                    <button onClick={handlePhotoURL} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">URL</button>
+                  </div>
+                </div>
+                <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file && editFormSecret) { const reader = new FileReader(); reader.onload = (ev) => { if (ev.target?.result) setEditFormSecret({ ...editFormSecret, photo: ev.target.result as string }); }; reader.readAsDataURL(file); } }} />
+                <input type="text" placeholder="Имя" value={editFormSecret.name} onChange={(e) => setEditFormSecret({ ...editFormSecret, name: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
+                <input type="text" placeholder="Фракция" value={editFormSecret.faction} onChange={(e) => setEditFormSecret({ ...editFormSecret, faction: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
+                <input type="text" placeholder="Ранг" value={editFormSecret.rank} onChange={(e) => setEditFormSecret({ ...editFormSecret, rank: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
+                <select value={editFormSecret.status} onChange={(e) => setEditFormSecret({ ...editFormSecret, status: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs">
+                  <option value="Активен">Активен</option><option value="Пропал">Пропал</option><option value="Мертв">Мертв</option><option value="В розыске">В розыске</option><option value="Неизвестен">Неизвестен</option>
+                </select>
+                <input type="text" placeholder="Дата рождения" value={editFormSecret.birthDate} onChange={(e) => setEditFormSecret({ ...editFormSecret, birthDate: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
+                <input type="text" placeholder="Номер дела" value={editFormSecret.caseNumber} onChange={(e) => setEditFormSecret({ ...editFormSecret, caseNumber: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800" />
+                <textarea placeholder="Краткая инфо" value={editFormSecret.shortInfo} onChange={(e) => setEditFormSecret({ ...editFormSecret, shortInfo: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={3} />
+                <textarea placeholder="Полная инфо" value={editFormSecret.fullInfo} onChange={(e) => setEditFormSecret({ ...editFormSecret, fullInfo: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={5} />
+                <textarea placeholder="Заметки" value={editFormSecret.notes} onChange={(e) => setEditFormSecret({ ...editFormSecret, notes: e.target.value })} className="w-full p-2 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-xs placeholder:text-red-800 resize-none" rows={3} />
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-red-600 font-mono text-[10px]">ЗАДАЧИ</span>
+                    <button onClick={() => { const newTask: Task = { id: `task-${Date.now()}`, description: '', status: 'в работе' }; setEditFormSecret({ ...editFormSecret, tasks: [newTask, ...editFormSecret.tasks] }); }} className="px-2 py-1 bg-red-900/30 border border-red-800 rounded text-red-400 font-mono text-xs">+ ДОБАВИТЬ</button>
+                  </div>
+                  {editFormSecret.tasks.map(t => (
+                    <div key={t.id} className="flex gap-2 mb-2 items-start">
+                      <select value={t.status} onChange={(e) => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.map(tk => tk.id === t.id ? { ...tk, status: e.target.value as Task['status'] } : tk) })} className="p-1 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-[10px]">
+                        <option value="в работе">В работе</option><option value="провалено">Провалено</option><option value="выполнено">Выполнено</option>
+                      </select>
+                      <input type="text" placeholder={getTaskPlaceholder(t.status)} value={t.description} onChange={(e) => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.map(tk => tk.id === t.id ? { ...tk, description: e.target.value } : tk) })} className="flex-1 p-1 bg-[#0f0a0a] border border-red-900/30 rounded text-red-400 font-mono text-[10px] placeholder:text-red-800" />
+                      <button onClick={() => setEditFormSecret({ ...editFormSecret, tasks: editFormSecret.tasks.filter(tk => tk.id !== t.id) })} className="text-red-600 hover:text-red-400">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Database Mode - List View */}
