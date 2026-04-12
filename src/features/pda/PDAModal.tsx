@@ -1,10 +1,40 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Component, ReactNode } from 'react';
 import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
+
+class PDAModalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full bg-[#1a1a1a] p-6 text-red-400 font-mono text-sm overflow-auto">
+          <div className="text-red-300 text-lg font-bold mb-4">ОШИБКА PDA</div>
+          <div className="text-xs text-gray-400 mb-2">{this.state.error?.message}</div>
+          <div className="text-[10px] text-gray-600 bg-[#0a0a0a] p-3 rounded break-all whitespace-pre-wrap">
+            {this.state.error?.stack}
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="mt-4 px-4 py-2 bg-red-900/30 border border-red-800 rounded text-red-400 text-xs"
+          >
+            ПЕРЕЗАГРУЗИТЬ
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface Task {
   id: string;
@@ -901,6 +931,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   }
 
   return (
+    <PDAModalErrorBoundary>
     <>
       <audio ref={allSoundRef} src="/media/sounds/all.mp3" />
       <audio ref={saveSoundRef} src="/media/sounds/save.mp3" />
@@ -1634,5 +1665,6 @@ onClick={() => {
         </style>
       </div>
     </>
+    </PDAModalErrorBoundary>
   );
 }
