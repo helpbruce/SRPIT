@@ -49,6 +49,7 @@ interface DatabaseViewProps {
   playAllSound: () => void;
   playSaveSound: () => void;
   currentLogin: string | null;
+  supabase: any;
   isSecret: boolean;
   photo1InputRef: React.RefObject<HTMLInputElement>;
   handlePhotoChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -72,7 +73,7 @@ export function DatabaseView({
   selectedCharacter, setSelectedCharacter, isEditing, setIsEditing,
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
-  playAllSound, playSaveSound, currentLogin, isSecret,
+  playAllSound, playSaveSound, currentLogin, supabase, isSecret,
   photo1InputRef, handlePhotoChange, handlePhotoURL, getTaskPlaceholder,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Database, BookOpen, Lock } from 'lucide-react';
+import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
