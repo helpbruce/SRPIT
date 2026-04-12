@@ -7,6 +7,8 @@ interface Task {
   id: string;
   description: string;
   status: 'в работе' | 'провалено' | 'выполнено';
+  author_login?: string;
+  created_at?: string; // ISO timestamp
 }
 
 interface Character {
@@ -267,7 +269,7 @@ export function DatabaseView({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className={`${textMuted} font-mono text-[10px]`}>ЗАДАЧИ ({editForm.tasks.filter(t => t.status === 'в работе').length} активн.)</span>
-                  <button onClick={() => { playAllSound(); setEditForm({ ...editForm, tasks: [{ id: `task-${Date.now()}`, description: '', status: 'в работе' }, ...editForm.tasks] }); setEditTasksExpanded(true); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>+ ДОБАВИТЬ</button>
+                  <button onClick={() => { playAllSound(); const newTask: Task = { id: crypto.randomUUID(), description: '', status: 'в работе', author_login: currentLogin || 'Аноним', created_at: new Date().toISOString() }; setEditForm({ ...editForm, tasks: [newTask, ...editForm.tasks] }); setEditTasksExpanded(true); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>+ ДОБАВИТЬ</button>
                 </div>
                 {editForm.tasks.map(t => (
                   <div key={t.id} className="flex gap-2 mb-2 items-start">
@@ -369,26 +371,51 @@ export function DatabaseView({
                       {tasksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
                     <div className="space-y-2 mt-2">
-                      {activeTasks.map(task => (
-                        <div key={task.id} className={`p-2 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded relative`}>
-                          <div className="absolute top-2 right-2">
-                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'в работе' ? (isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/10' : 'border-yellow-500 text-yellow-400 bg-yellow-500/20') : task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
-                              {task.status}
+                      {activeTasks.map(task => {
+                        const createdAt = task.created_at ? new Date(task.created_at) : null;
+                        const taskDate = createdAt ? `${String(createdAt.getDate()).padStart(2, '0')}.${String(createdAt.getMonth() + 1).padStart(2, '0')}.2009` : '—';
+                        const taskTime = createdAt ? `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}` : '—';
+                        const taskAuthor = task.author_login || 'Аноним';
+                        return (
+                          <div key={task.id} className={`group relative p-3 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded transition-all hover:border-opacity-70`}>
+                            {/* Hover metadata */}
+                            <div className="absolute top-1 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className={`text-[9px] font-mono ${isSecret ? 'text-red-600' : 'text-gray-600'}`}>
+                                [{taskDate} | {taskTime} (UTC+3:00) | {taskAuthor}]
+                              </span>
                             </div>
-                          </div>
-                          <div className={`text-[11px] pr-20 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
-                        </div>
-                      ))}
-                      {tasksExpanded && completedTasks.map(task => (
-                        <div key={task.id} className={`p-2 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded relative`}>
-                          <div className="absolute top-2 right-2">
-                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
-                              {task.status}
+                            {/* Status badge */}
+                            <div className="absolute top-2 right-2">
+                              <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'в работе' ? (isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/10' : 'border-yellow-500 text-yellow-400 bg-yellow-500/20') : task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
+                                {task.status}
+                              </div>
                             </div>
+                            {/* Task description */}
+                            <div className={`text-[11px] pt-4 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
                           </div>
-                          <div className={`text-[11px] pr-20 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                      {tasksExpanded && completedTasks.map(task => {
+                        const createdAt = task.created_at ? new Date(task.created_at) : null;
+                        const taskDate = createdAt ? `${String(createdAt.getDate()).padStart(2, '0')}.${String(createdAt.getMonth() + 1).padStart(2, '0')}.2009` : '—';
+                        const taskTime = createdAt ? `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}` : '—';
+                        const taskAuthor = task.author_login || 'Аноним';
+                        return (
+                          <div key={task.id} className={`group relative p-3 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded transition-all hover:border-opacity-70 opacity-60`}>
+                            <div className="absolute top-1 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className={`text-[9px] font-mono ${isSecret ? 'text-red-600' : 'text-gray-600'}`}>
+                                [{taskDate} | {taskTime} (UTC+3:00) | {taskAuthor}]
+                              </span>
+                            </div>
+                            <div className="absolute top-2 right-2">
+                              <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
+                                {task.status}
+                              </div>
+                            </div>
+                            <div className={`text-[11px] pt-4 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
