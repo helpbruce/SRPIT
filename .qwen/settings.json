@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npx *)",
       "Bash(node *)",
-      "Bash(\"c:\\program files\\git\\cmd\\git.exe\" *)"
+      "Bash(\"c:\\program files\\git\\cmd\\git.exe\" *)",
+      "Bash(findstr *)",
+      "Bash(more *)"
     ]
   },
   "$version": 3

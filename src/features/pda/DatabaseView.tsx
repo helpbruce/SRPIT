@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
@@ -173,60 +173,96 @@ export function DatabaseView({
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
         <div className={`p-3 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
-          <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); setEditTasksExpanded(false); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>ОТМЕНА</button>
-          <button onClick={saveCharacter} className="px-3 py-1 bg-green-900/30 border border-green-800 rounded text-green-400 font-mono text-xs hover:bg-green-900/50">СОХРАНИТЬ</button>
+          <h2 className={`text-sm font-mono ${textMuted}`}>{isCreating ? 'НОВЫЙ ПЕРСОНАЖ' : 'РЕДАКТИРОВАНИЕ'}</h2>
+          <div className="flex gap-2">
+            <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
+            <button onClick={saveCharacter} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+              <Save className="w-4 h-4" /> СОХРАНИТЬ
+            </button>
+          </div>
         </div>
-        <div className="flex-1 overflow-y-auto pda-scrollbar p-4 space-y-3">
-          <div className="flex gap-3 items-center">
-            <img src={editForm.photo} className="w-20 h-20 object-cover rounded border-2 border-[#2a2a2a]" alt="" />
-            <div className="flex gap-2">
-              <button onClick={() => photo1InputRef.current?.click()} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>ФОТО</button>
-              <button onClick={handlePhotoURL} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>URL</button>
-            </div>
-          </div>
-          <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
-          <input type="text" placeholder="Имя" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`} />
-          <input type="text" placeholder="Фракция" value={editForm.faction} onChange={(e) => setEditForm({ ...editForm, faction: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`} />
-          <input type="text" placeholder="Ранг" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`} />
-          <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
-            <option value="Активен">Активен</option><option value="Пропал">Пропал</option><option value="Мертв">Мертв</option><option value="В розыске">В розыске</option><option value="Неизвестен">Неизвестен</option>
-          </select>
-          <input type="text" placeholder="Дата рождения" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`} />
-          <input type="text" placeholder="Номер дела" value={editForm.caseNumber} onChange={(e) => setEditForm({ ...editForm, caseNumber: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`} />
 
-          {/* Short Info */}
-          <div>
-            <div className={`${textMuted} font-mono text-[10px] mb-1`}>КРАТКАЯ ИНФО</div>
-            <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Рост, вес, телосложение..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none`} rows={4} />
-          </div>
-
-          {/* Full Info */}
-          <div>
-            <div className={`${textMuted} font-mono text-[10px] mb-1`}>ПОЛНАЯ ИНФО</div>
-            <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none`} rows={6} />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <div className={`${textMuted} font-mono text-[10px] mb-1`}>ЗАМЕТКИ</div>
-            <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none`} rows={3} />
-          </div>
-
-          {/* Tasks */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className={`${textMuted} font-mono text-[10px]`}>ЗАДАЧИ ({editForm.tasks.filter(t => t.status === 'в работе').length} активн.)</span>
-              <button onClick={addTask} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>+ ДОБАВИТЬ</button>
-            </div>
-            {editForm.tasks.map(t => (
-              <div key={t.id} className="flex gap-2 mb-2 items-start">
-                <select value={t.status} onChange={(e) => updateTask(t.id, { status: e.target.value as Task['status'] })} className={`p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor}`}>
-                  <option value="в работе">В работе</option><option value="провалено">Провалено</option><option value="выполнено">Выполнено</option>
-                </select>
-                <input type="text" placeholder={getTaskPlaceholder(t.status)} value={t.description} onChange={(e) => updateTask(t.id, { description: e.target.value })} className={`flex-1 p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor} placeholder:opacity-50`} />
-                <button onClick={() => deleteTask(t.id)} className={`${isSecret ? 'text-red-600' : 'text-gray-600'} hover:text-red-400`}>✕</button>
+        <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
+          <div className="flex gap-4">
+            {/* Left - Photo */}
+            <div className="flex-shrink-0">
+              <div className="mb-3">
+                <label className={`block ${textMuted} text-[10px] font-mono mb-1 text-center`}>НОМЕР ДЕЛА</label>
+                <input type="text" value={editForm.caseNumber} onChange={(e) => setEditForm({ ...editForm, caseNumber: e.target.value })} placeholder="88005553535" className={`w-40 p-2 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none text-center placeholder:opacity-30`} />
               </div>
-            ))}
+              <img src={editForm.photo} alt="Preview" className="w-40 h-56 object-cover rounded border border-[#2a2a2a] mb-3" />
+              <div className="flex gap-2">
+                <button onClick={() => { playAllSound(); photo1InputRef.current?.click(); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>ФАЙЛ</button>
+                <button onClick={handlePhotoURL} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>URL</button>
+              </div>
+              <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+            </div>
+
+            {/* Right - Fields */}
+            <div className="flex-1 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ИМЯ</label>
+                  <input type="text" placeholder="Имя" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                </div>
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
+                  <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
+                    <option value="Активен">Активен</option><option value="Пропал">Пропал</option><option value="Мертв">Мертв</option><option value="В розыске">В розыске</option><option value="Неизвестен">Неизвестен</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ФРАКЦИЯ</label>
+                  <input type="text" placeholder="Фракция" value={editForm.faction} onChange={(e) => setEditForm({ ...editForm, faction: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                </div>
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>РАНГ</label>
+                  <input type="text" placeholder="Ранг" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                </div>
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ДАТА РОЖДЕНИЯ</label>
+                  <input type="text" placeholder="Дата рождения" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                </div>
+              </div>
+
+              {/* Short Info */}
+              <div>
+                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>КРАТКАЯ ИНФО</label>
+                <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Рост, вес, телосложение..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
+              </div>
+
+              {/* Full Info */}
+              <div>
+                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ПОЛНАЯ ИНФО</label>
+                <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={6} />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАМЕТКИ</label>
+                <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
+              </div>
+
+              {/* Tasks */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`${textMuted} font-mono text-[10px]`}>ЗАДАЧИ ({editForm.tasks.filter(t => t.status === 'в работе').length} активн.)</span>
+                  <button onClick={() => { playAllSound(); setEditForm({ ...editForm, tasks: [{ id: `task-${Date.now()}`, description: '', status: 'в работе' }, ...editForm.tasks] }); setEditTasksExpanded(true); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>+ ДОБАВИТЬ</button>
+                </div>
+                {editForm.tasks.map(t => (
+                  <div key={t.id} className="flex gap-2 mb-2 items-start">
+                    <select value={t.status} onChange={(e) => setEditForm({ ...editForm, tasks: editForm.tasks.map(tk => tk.id === t.id ? { ...tk, status: e.target.value as Task['status'] } : tk) })} className={`p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor}`}>
+                      <option value="в работе">В работе</option><option value="провалено">Провалено</option><option value="выполнено">Выполнено</option>
+                    </select>
+                    <input type="text" placeholder={getTaskPlaceholder(t.status)} value={t.description} onChange={(e) => setEditForm({ ...editForm, tasks: editForm.tasks.map(tk => tk.id === t.id ? { ...tk, description: e.target.value } : tk) })} className={`flex-1 p-1 ${inputBg} border rounded font-mono text-[10px] ${textColor} placeholder:opacity-30`} />
+                    <button onClick={() => setEditForm({ ...editForm, tasks: editForm.tasks.filter(tk => tk.id !== t.id) })} className={`${isSecret ? 'text-red-600' : 'text-gray-600'} hover:text-red-400`}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -239,85 +275,125 @@ export function DatabaseView({
     const completedTasks = selectedCharacter.tasks.filter(t => t.status !== 'в работе');
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
-        <div className={`p-3 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
-          <button onClick={() => { playAllSound(); setSelectedCharacter(null); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1`}>
-            <ChevronLeft className="w-3 h-3" /> Назад
+        <div className={`p-3 border-b ${borderColor} flex-shrink-0`}>
+          <button onClick={() => { playAllSound(); setSelectedCharacter(null); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+            <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
-          <div className="flex gap-2">
-            <button onClick={() => { playAllSound(); setEditForm({ ...selectedCharacter }); setIsEditing(true); }} className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1`}>
-              <Edit2 className="w-3 h-3" /> РЕД.
-            </button>
-            <button onClick={() => deleteCharacter(selectedCharacter.id)} className={`px-2 py-1 ${isSecret ? 'bg-red-900/50 border-red-700 text-red-400' : 'bg-red-900/30 border-red-800 text-red-400'} border rounded font-mono text-xs flex items-center gap-1`}>
-              <Trash2 className="w-3 h-3" />
-            </button>
-          </div>
         </div>
+
         <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-          {/* Header */}
-          <div className="flex gap-4 mb-4">
-            <img src={selectedCharacter.photo} className="w-24 h-24 object-cover rounded border-2 border-[#2a2a2a]" alt="" />
-            <div>
-              <h2 className={`${textLight} font-mono text-lg font-bold`}>{selectedCharacter.name || 'Без имени'}</h2>
-              <div className={`${textMuted} font-mono text-xs`}>{selectedCharacter.faction} • {selectedCharacter.rank}</div>
-              <div className={`${textMuted} font-mono text-xs mt-1 flex items-center gap-2`}>
-                <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)}`}></div>
-                {selectedCharacter.status}
+          <div className="flex gap-5">
+            {/* Left column - Photo + buttons */}
+            <div className="flex-shrink-0 flex flex-col items-center">
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => { playAllSound(); setEditForm({ ...selectedCharacter }); setIsEditing(true); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1 hover:opacity-80 transition-all`}>
+                  <Edit2 className="w-3 h-3" /> ИЗМЕНИТЬ
+                </button>
+                <button onClick={() => deleteCharacter(selectedCharacter.id)} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/40 border-red-700 text-red-400' : 'bg-red-900/20 border-red-800 text-red-500'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>
+                  УДАЛИТЬ
+                </button>
               </div>
-              {selectedCharacter.caseNumber && <div className={`${textMuted} font-mono text-xs`}>Дело: {selectedCharacter.caseNumber}</div>}
-              {selectedCharacter.birthDate && <div className={`${textMuted} font-mono text-xs`}>Дата рождения: {selectedCharacter.birthDate}</div>}
+
+              <div className="relative mb-3">
+                <img
+                  src={selectedCharacter.photo}
+                  alt={selectedCharacter.name}
+                  className="w-40 h-56 object-cover rounded border border-[#2a2a2a] shadow-lg"
+                />
+                <div className="absolute top-0 left-0 right-0 flex justify-center">
+                  <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80">
+                    <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)} animate-pulse`}></div>
+                    <span className="text-gray-300 font-mono text-[10px]">{selectedCharacter.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-center space-y-1.5 mb-3 w-full">
+                <div className="flex items-center justify-center gap-1.5">
+                  <Calendar className="w-3 h-3 text-gray-600 flex-shrink-0" />
+                  <div className="text-gray-400 font-mono text-[11px]">{selectedCharacter.birthDate}</div>
+                </div>
+                <div className="text-gray-300 font-mono text-sm font-bold">
+                  {selectedCharacter.faction}
+                </div>
+                <div className="text-gray-500 font-mono text-xs">
+                  {selectedCharacter.rank}
+                </div>
+              </div>
+            </div>
+
+            {/* Right column - Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-3 border-b border-[#2a2a2a] pb-2">
+                <h2 className={`text-lg font-mono break-words flex-1 ${textLight}`}>
+                  {selectedCharacter.name || 'Без имени'}
+                </h2>
+                {selectedCharacter.caseNumber && (
+                  <div className="text-gray-400 font-mono text-base ml-3 flex-shrink-0">
+                    {selectedCharacter.caseNumber}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {/* Short Info */}
+                {selectedCharacter.shortInfo && (
+                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
+                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>КРАТКАЯ ИНФОРМАЦИЯ</div>
+                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.shortInfo}</div>
+                  </div>
+                )}
+
+                {/* Tasks */}
+                {selectedCharacter.tasks.length > 0 && (
+                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
+                    <button onClick={() => { playAllSound(); setTasksExpanded(!tasksExpanded); }} className={`w-full flex items-center justify-between ${textMuted} text-[10px] font-mono mb-2 hover:opacity-80 transition-colors`}>
+                      <span>ЗАДАЧИ ({selectedCharacter.tasks.length})</span>
+                      {tasksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    <div className="space-y-2 mt-2">
+                      {activeTasks.map(task => (
+                        <div key={task.id} className={`p-2 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded relative`}>
+                          <div className="absolute top-2 right-2">
+                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'в работе' ? (isSecret ? 'border-yellow-600/50 text-yellow-500 bg-yellow-600/10' : 'border-yellow-500 text-yellow-400 bg-yellow-500/20') : task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
+                              {task.status}
+                            </div>
+                          </div>
+                          <div className={`text-[11px] pr-20 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
+                        </div>
+                      ))}
+                      {tasksExpanded && completedTasks.map(task => (
+                        <div key={task.id} className={`p-2 ${isSecret ? 'bg-red-950/50 border-red-900/30' : 'bg-[#050505] border-[#2a2a2a]'} border rounded relative`}>
+                          <div className="absolute top-2 right-2">
+                            <div className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${task.status === 'провалено' ? (isSecret ? 'border-red-600/50 text-red-500 bg-red-600/10' : 'border-red-500 text-red-400 bg-red-500/20') : (isSecret ? 'border-gray-600/50 text-gray-400 bg-gray-600/10' : 'border-gray-500 text-gray-300 bg-gray-500/20')}`}>
+                              {task.status}
+                            </div>
+                          </div>
+                          <div className={`text-[11px] pr-20 break-words whitespace-pre-wrap ${textColor}`}>{task.description || 'Без описания'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Full Info */}
+                {selectedCharacter.fullInfo && (
+                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
+                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>ПОЛНАЯ ИНФОРМАЦИЯ</div>
+                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.fullInfo}</div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {selectedCharacter.notes && (
+                  <div className={`p-3 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>
+                    <div className={`${textMuted} text-[10px] font-mono mb-2`}>ЗАМЕТКИ</div>
+                    <div className={`text-[11px] break-words whitespace-pre-wrap ${textColor}`}>{selectedCharacter.notes}</div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-
-          {/* Short Info */}
-          {selectedCharacter.shortInfo && (
-            <div className="mb-3">
-              <button onClick={() => setExpandedShortInfo(expandedShortInfo === selectedCharacter.id ? null : selectedCharacter.id)} className={`${textMuted} font-mono text-[10px] mb-1 flex items-center gap-1`}>
-                {expandedShortInfo === selectedCharacter.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />} КРАТКАЯ ИНФО
-              </button>
-              {(expandedShortInfo === selectedCharacter.id) && <pre className={`${textColor} font-mono text-xs whitespace-pre-wrap mt-1 p-2 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>{selectedCharacter.shortInfo}</pre>}
-            </div>
-          )}
-
-          {/* Full Info */}
-          {selectedCharacter.fullInfo && (
-            <div className="mb-3">
-              <div className={`${textMuted} font-mono text-[10px] mb-1`}>ПОЛНАЯ ИНФО</div>
-              <pre className={`${textColor} font-mono text-xs whitespace-pre-wrap p-2 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>{selectedCharacter.fullInfo}</pre>
-            </div>
-          )}
-
-          {/* Notes */}
-          {selectedCharacter.notes && (
-            <div className="mb-3">
-              <div className={`${textMuted} font-mono text-[10px] mb-1`}>ЗАМЕТКИ</div>
-              <pre className={`${textColor} font-mono text-xs whitespace-pre-wrap p-2 ${isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'} border rounded`}>{selectedCharacter.notes}</pre>
-            </div>
-          )}
-
-          {/* Tasks */}
-          {selectedCharacter.tasks.length > 0 && (
-            <div>
-              <div className={`${textMuted} font-mono text-[10px] mb-2`}>ЗАДАЧИ ({activeTasks.length} активн.)</div>
-              {activeTasks.map(t => (
-                <div key={t.id} className={`p-2 mb-1 rounded border text-xs font-mono ${isSecret ? 'border-yellow-600/30 bg-yellow-600/10 text-yellow-400' : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-400'}`}>
-                  {t.description || <span className="opacity-50">Нет описания</span>}
-                </div>
-              ))}
-              {completedTasks.length > 0 && tasksExpanded && (
-                <div className="mt-2">
-                  <div className={`${textMuted} font-mono text-[10px] mb-1`}>Завершённые</div>
-                  {completedTasks.map(t => (
-                    <div key={t.id} className={`p-2 mb-1 rounded border text-xs font-mono ${t.status === 'провалено' ? (isSecret ? 'border-red-600/30 bg-red-600/10 text-red-400' : 'border-red-600/30 bg-red-600/10 text-red-400') : (isSecret ? 'border-gray-600/30 bg-gray-600/10 text-gray-400' : 'border-gray-600/30 bg-gray-600/10 text-gray-400')}`}>
-                      {t.description || <span className="opacity-50">Нет описания</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {completedTasks.length > 0 && !tasksExpanded && (
-                <button onClick={() => setTasksExpanded(true)} className={`${textMuted} font-mono text-[10px] mt-1`}>Показать завершённые ({completedTasks.length})</button>
-              )}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -374,6 +450,7 @@ export function DatabaseView({
                     </div>
                   </div>
                 )}
+
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 relative">
                     <img src={char.photo} alt={char.name} className="w-20 h-28 object-cover rounded border border-[#2a2a2a]" />
@@ -388,15 +465,26 @@ export function DatabaseView({
                     <div className={`${textLight} font-mono text-lg mb-1 truncate`}>{char.name}</div>
                     <div className={`${textColor} font-mono text-base mb-0 truncate`}>{char.faction}</div>
                     <div className={`${textMuted} font-mono text-xs mb-3 truncate`}>{char.rank}</div>
-                    {char.shortInfo && (
-                      <div className={`${textMuted} font-mono text-[10px] line-clamp-3 whitespace-pre-wrap`}>{char.shortInfo}</div>
-                    )}
-                    {char.tasks.some(t => t.status === 'в работе') && (
-                      <div className={`mt-1 text-[9px] font-mono ${isSecret ? 'text-yellow-500' : 'text-yellow-400'}`}>
-                        {char.tasks.filter(t => t.status === 'в работе').length} зад.
-                      </div>
-                    )}
+                    <div className={`${textMuted} font-mono text-xs mb-1 truncate`}>{char.birthDate}</div>
                   </div>
+                </div>
+
+                <div
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    playAllSound();
+                    setExpandedShortInfo(expandedShortInfo === char.id ? null : char.id);
+                  }}
+                >
+                  <div className={`${textMuted} font-mono text-xs break-words ${expandedShortInfo === char.id ? '' : 'line-clamp-2'}`}>
+                    {char.shortInfo}
+                  </div>
+                  {char.shortInfo && char.shortInfo.length > 60 && (
+                    <div className="text-gray-600 font-mono text-[8px] mt-1 text-right">
+                      {expandedShortInfo === char.id ? '▲ Скрыть' : '▼ Показать'}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
