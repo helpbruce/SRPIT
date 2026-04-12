@@ -91,42 +91,60 @@ export function DatabaseView({
     playSaveSound();
     if (!editForm) return;
 
-    if (isCreating) {
-      setCharacters(prev => [...prev, editForm]);
-      setIsCreating(false);
-    } else {
-      setCharacters(prev => prev.map(c => c.id === editForm!.id ? editForm! : c));
-    }
-
-    const payload = {
-      id: editForm.id, photo: editForm.photo || null, name: editForm.name || '',
-      birthdate: editForm.birthDate || null, faction: editForm.faction || null,
-      rank: editForm.rank || null, status: editForm.status || 'Неизвестен',
-      shortinfo: editForm.shortInfo || null, fullinfo: editForm.fullInfo || null,
-      notes: editForm.notes || null, casenumber: editForm.caseNumber || null,
-      tasks: editForm.tasks || null, author_login: currentLogin || null,
-      updated_at: new Date().toISOString(),
-    };
-    const updated = isCreating ? [...characters, editForm] : characters.map(c => c.id === editForm.id ? editForm : c);
-    setCharacters(updated);
-    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
-
+    // Сначала сохраняем в Supabase
     if (supabase) {
       const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-      supabase.from(tableName).upsert(payload, { onConflict: 'id' }).then(({ error }) => {
-        if (error) {
-          console.error('Failed to upsert:', error);
-          setCharacters(characters);
-          CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
-        }
-      });
-    }
+      const payload = {
+        id: editForm.id, photo: editForm.photo || null, name: editForm.name || '',
+        birthdate: editForm.birthDate || null, faction: editForm.faction || null,
+        rank: editForm.rank || null, status: editForm.status || 'Неизвестен',
+        shortinfo: editForm.shortInfo || null, fullinfo: editForm.fullInfo || null,
+        notes: editForm.notes || null, casenumber: editForm.caseNumber || null,
+        tasks: editForm.tasks || null, author_login: currentLogin || null,
+        updated_at: new Date().toISOString(),
+      };
 
-    setIsEditing(false);
-    setEditForm(null);
-    setTasksExpanded(false);
-    setEditTasksExpanded(false);
+      console.log(`Saving to ${tableName}:`, payload);
+
+      supabase.from(tableName).upsert(payload, { onConflict: 'id' }).then(({ data, error }) => {
+        if (error) {
+          console.error(`Failed to upsert ${tableName}:`, error);
+          alert(`Ошибка сохранения: ${error.message}`);
+          return;
+        }
+        console.log(`Saved to ${tableName}:`, data);
+
+        // Только после успешного сохранения обновляем UI
+        if (isCreating) {
+          setCharacters(prev => [...prev, editForm]);
+          setIsCreating(false);
+        } else {
+          setCharacters(prev => prev.map(c => c.id === editForm!.id ? editForm! : c));
+        }
+        const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+        const updated = isCreating ? [...characters, editForm] : characters.map(c => c.id === editForm.id ? editForm : c);
+        CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+        setIsEditing(false);
+        setEditForm(null);
+        setTasksExpanded(false);
+        setEditTasksExpanded(false);
+      });
+    } else {
+      // Без Supabase — просто локальное сохранение
+      if (isCreating) {
+        setCharacters(prev => [...prev, editForm]);
+        setIsCreating(false);
+      } else {
+        setCharacters(prev => prev.map(c => c.id === editForm!.id ? editForm! : c));
+      }
+      const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+      const updated = isCreating ? [...characters, editForm] : characters.map(c => c.id === editForm.id ? editForm : c);
+      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+      setIsEditing(false);
+      setEditForm(null);
+      setTasksExpanded(false);
+      setEditTasksExpanded(false);
+    }
   };
 
   const deleteCharacter = (id: string) => {
