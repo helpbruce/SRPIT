@@ -3,6 +3,7 @@ import { X, Plus, Edit2, Save, Calendar, ChevronLeft, Search, ChevronDown, Chevr
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
+import { debounce } from '../../shared/lib/realtimeUtils';
 
 interface Task {
   id: string;
@@ -182,9 +183,8 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     }
   }, [isOpen]);
 
-  // Load data from Supabase + кеш + realtime подписка
+  // Load data from Supabase + кеш + realtime с debounce
   useEffect(() => {
-    // Если Supabase не инициализировался — пробуем загрузить из кеша
     if (!supabase) {
       const cachedChars = CacheManager.get<Character[]>('pda_characters');
       const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
@@ -194,72 +194,79 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     }
 
     let isMounted = true;
+    let isLoading = false;
 
     const loadData = async () => {
-      // Сначала загружаем из кеша для мгновенного отображения
-      const cachedChars = CacheManager.get<Character[]>('pda_characters');
-      const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
-      if (cachedChars && isMounted) setCharacters(cachedChars);
-      if (cachedBestiary && isMounted) setBestiaryEntries(cachedBestiary);
+      if (isLoading) return;
+      isLoading = true;
+      try {
+        const [charactersRes, bestiaryRes] = await Promise.all([
+          supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
+          supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
+        ]);
 
-      // Затем загружаем свежие данные из Supabase
-      const [charactersRes, bestiaryRes] = await Promise.all([
-        supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
-        supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
-      ]);
+        if (charactersRes.error) {
+          console.error('Failed to load pda_characters from Supabase:', charactersRes.error);
+        } else if (isMounted && charactersRes.data) {
+          const mapped: Character[] = charactersRes.data.map((row: any) => ({
+            id: row.id,
+            photo: row.photo ?? '/icons/nodata.png',
+            name: row.name ?? '',
+            birthDate: row.birthdate ?? '',
+            faction: row.faction ?? '',
+            rank: row.rank ?? '',
+            status: row.status ?? 'Неизвестен',
+            shortInfo: row.shortinfo ?? '',
+            fullInfo: row.fullinfo ?? '',
+            notes: row.notes ?? '',
+            tasks: (row.tasks ?? []) as Task[],
+            caseNumber: row.casenumber ?? '',
+          }));
+          setCharacters(mapped);
+          CacheManager.set('pda_characters', mapped, 10 * 60 * 1000);
+        }
 
-      if (charactersRes.error) {
-        console.error('Failed to load pda_characters from Supabase:', charactersRes.error);
-      } else if (isMounted && charactersRes.data) {
-        const mapped: Character[] = charactersRes.data.map((row: any) => ({
-          id: row.id,
-          photo: row.photo ?? '/icons/nodata.png',
-          name: row.name ?? '',
-          birthDate: row.birthdate ?? '',
-          faction: row.faction ?? '',
-          rank: row.rank ?? '',
-          status: row.status ?? 'Неизвестен',
-          shortInfo: row.shortinfo ?? '',
-          fullInfo: row.fullinfo ?? '',
-          notes: row.notes ?? '',
-          tasks: (row.tasks ?? []) as Task[],
-          caseNumber: row.casenumber ?? '',
-        }));
-        setCharacters(mapped);
-        CacheManager.set('pda_characters', mapped, 10 * 60 * 1000);
-      }
-
-      if (bestiaryRes.error) {
-        console.error('Failed to load bestiary_entries from Supabase:', bestiaryRes.error);
-      } else if (isMounted && bestiaryRes.data) {
-        const mapped: BestiaryEntry[] = bestiaryRes.data.map((row: any) => ({
-          id: row.id,
-          type: row.type,
-          name: row.name,
-          photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
-          shortInfo: row.short_info ?? '',
-          fullInfo: row.full_info ?? '',
-          dangerLevel: row.danger_level ?? 'средний',
-          anomalyNames: row.anomaly_names ?? [],
-        }));
-        setBestiaryEntries(mapped);
-        CacheManager.set('bestiary_entries', mapped, 10 * 60 * 1000);
+        if (bestiaryRes.error) {
+          console.error('Failed to load bestiary_entries from Supabase:', bestiaryRes.error);
+        } else if (isMounted && bestiaryRes.data) {
+          const mapped: BestiaryEntry[] = bestiaryRes.data.map((row: any) => ({
+            id: row.id,
+            type: row.type,
+            name: row.name,
+            photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
+            shortInfo: row.short_info ?? '',
+            fullInfo: row.full_info ?? '',
+            dangerLevel: row.danger_level ?? 'средний',
+            anomalyNames: row.anomaly_names ?? [],
+          }));
+          setBestiaryEntries(mapped);
+          CacheManager.set('bestiary_entries', mapped, 10 * 60 * 1000);
+        }
+      } finally {
+        isLoading = false;
       }
     };
 
+    // Начальная загрузка — сначала кеш, потом Supabase
+    const cachedChars = CacheManager.get<Character[]>('pda_characters');
+    const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
+    if (cachedChars && isMounted) setCharacters(cachedChars);
+    if (cachedBestiary && isMounted) setBestiaryEntries(cachedBestiary);
     loadData();
 
+    // Realtime с debounce — 500ms
+    const debouncedLoad = debounce(loadData, 500);
     const channel = supabase
       .channel('pda_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'pda_characters' },
-        () => loadData()
+        debouncedLoad
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bestiary_entries' },
-        () => loadData()
+        debouncedLoad
       )
       .subscribe();
 
@@ -766,10 +773,16 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
             />
             <input
-            type="text"
+            type="password"
             placeholder="Пароль"
             value={authPassword}
             onChange={(e) => setAuthPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                playAllSound();
+                authMode === 'login' ? handleLogin() : handleRegister();
+              }
+            }}
             className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
             />
             

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
+import { debounce } from '../../shared/lib/realtimeUtils';
 
 interface USBFile {
   id?: string;
@@ -124,69 +125,69 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
     };
   }, [viewerFile, currentType, viewerIndex]);
 
-  // Пароль сохраняется в открытом виде для полной прозрачности.
-  // Используем password_hash как поле для хранения реального пароля.
-
-  // Load USB files from Supabase + кеш + realtime подписка
+  // Load USB files from Supabase + кеш + realtime с debounce
   useEffect(() => {
     if (!supabase) {
-      // Пробуем загрузить из кеша если Supabase не настроен
       const cached = CacheManager.get<USBFiles>('usb_files');
-      if (cached) {
-        setUsbFiles(cached);
-      }
+      if (cached) setUsbFiles(cached);
       return;
     }
 
     let isMounted = true;
+    let isLoading = false;
 
     const loadUsbFiles = async () => {
-      // Сначала загружаем из кеша для мгновенного отображения
-      const cached = CacheManager.get<USBFiles>('usb_files');
-      if (cached && isMounted) {
-        setUsbFiles(cached);
+      if (isLoading) return;
+      isLoading = true;
+      try {
+        const { data, error } = await supabase
+          .from('usb_files')
+          .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.error('Failed to load usb_files from Supabase:', error);
+          return;
+        }
+
+        if (!isMounted || !data) return;
+
+        const next: USBFiles = { photo: [], video: [], audio: [] };
+        for (const row of data) {
+          const type = row.type as 'photo' | 'video' | 'audio';
+          next[type].push({
+            id: row.id as string,
+            url: row.url as string,
+            name: row.name as string,
+            createdAt: (row.created_at_label as string) ?? '',
+            is_protected: (row.is_protected as boolean) ?? false,
+            password_hash: (row.password_hash as string) ?? null,
+            protected_hint: (row.protected_hint as string) ?? null,
+          });
+        }
+
+        setUsbFiles(next);
+        CacheManager.set('usb_files', next, 10 * 60 * 1000);
+      } finally {
+        isLoading = false;
       }
-
-      // Затем загружаем свежие данные из Supabase
-      const { data, error } = await supabase
-        .from('usb_files')
-        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Failed to load usb_files from Supabase:', error);
-        return;
-      }
-
-      if (!isMounted || !data) return;
-
-      const next: USBFiles = { photo: [], video: [], audio: [] };
-      for (const row of data) {
-        const type = row.type as 'photo' | 'video' | 'audio';
-        next[type].push({
-          id: row.id as string,
-          url: row.url as string,
-          name: row.name as string,
-          createdAt: (row.created_at_label as string) ?? '',
-          is_protected: (row.is_protected as boolean) ?? false,
-          password_hash: (row.password_hash as string) ?? null,
-          protected_hint: (row.protected_hint as string) ?? null,
-        });
-      }
-
-      setUsbFiles(next);
-      // Сохраняем в кеш
-      CacheManager.set('usb_files', next, 10 * 60 * 1000); // 10 минут
     };
 
+    // Начальная загрузка — сначала кеш, потом Supabase
+    const cached = CacheManager.get<USBFiles>('usb_files');
+    if (cached && isMounted) {
+      setUsbFiles(cached);
+    }
     loadUsbFiles();
 
+    // Realtime с debounce — 500ms
+    const debouncedLoad = debounce(loadUsbFiles, 500);
     const channel = supabase
       .channel('usb_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'usb_files' },
-        () => loadUsbFiles()
+        debouncedLoad
       )
       .subscribe();
 
@@ -262,13 +263,13 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
     return name;
   };
 
-  const addUSBFile = (url: string) => {
+  const addUSBFile = (url: string, name?: string) => {
     playAllSound();
     const type = detectFileType(url);
     const embedUrl = convertToEmbedUrl(url);
-    
-    const autoName = generateAutoName(type);
-    const name = prompt('Введите название файла:', autoName) || autoName;
+
+    const autoName = name || generateAutoName(type);
+    const finalName = name || (prompt('Введите название файла:', autoName) || autoName);
     
     const now = new Date();
     const day = String(now.getDate()).padStart(2, '0');
@@ -276,7 +277,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
     const year = 2009;
     const createdAt = `${day}.${month}.${year}`;
 
-    const newFile: USBFile = { url: embedUrl, name, createdAt };
+    const newFile: USBFile = { url: embedUrl, name: finalName, createdAt };
     const updated = {
       ...usbFiles,
       [type]: [...usbFiles[type], newFile]
@@ -292,7 +293,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
         .insert({
           type,
           url: embedUrl,
-          name,
+          name: finalName,
           created_at_label: createdAt,
         })
         .select('id')
@@ -318,7 +319,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
 
             const filesOfType = updatedWithId[type];
             const index = filesOfType.findIndex(
-              (f) => !f.id && f.url === embedUrl && f.name === name && f.createdAt === createdAt
+              (f) => !f.id && f.url === embedUrl && f.name === finalName && f.createdAt === createdAt
             );
 
             if (index !== -1) {
@@ -706,7 +707,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                     onClick={async () => {
                       const pwd = prompt('Установите пароль на файл:');
                       if (!pwd || !viewerFile?.id) return;
-                      const hint = prompt('Подсказка (необязательно):') || null;
+                      const hint = null;
                       setViewerFile(v => v ? { ...v, is_protected: true, password_hash: pwd, protected_hint: hint } : v);
                       setUsbFiles(prev => {
                         if (!currentType) return prev;

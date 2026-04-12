@@ -10,6 +10,7 @@ import { getImagePath } from '../shared/lib/PlaceholderImages';
 const FolderViewer = lazy(() => import('../features/folder/FolderViewer').then(m => ({ default: m.FolderViewer })));
 import { supabase } from '../shared/lib/supabaseClient';
 import { CacheManager } from '../shared/lib/cache';
+import { debounce } from '../shared/lib/realtimeUtils';
 import { User } from '@supabase/supabase-js';
 
 interface Document {
@@ -67,60 +68,60 @@ export default function App() {
   // Определяем активные блокировки
   const isAnyModalOpen = isUSBOpen || isPDAOpen || isMapOpen || isAddModalOpen || fullscreenIndex !== null;
 
-  // Load documents from Supabase + кеш + realtime
+  // Load documents from Supabase + кеш + realtime с debounce
   useEffect(() => {
     if (!supabase) {
-      // Пробуем загрузить из кеша если Supabase не настроен
       const cached = CacheManager.get<Document[]>('documents');
-      if (cached) {
-        setDocuments(cached);
-      }
+      if (cached) setDocuments(cached);
       return;
     }
 
     let isMounted = true;
+    let isLoading = false;
 
     const loadDocuments = async () => {
-      // Сначала загружаем из кеша для мгновенного отображения
-      const cached = CacheManager.get<Document[]>('documents');
-      if (cached && isMounted) {
-        setDocuments(cached);
+      if (isLoading) return;
+      isLoading = true;
+      try {
+        const { data, error } = await supabase
+          .from('documents')
+          .select('id, url')
+          .order('created_at', { ascending: true });
+
+        if (error) {
+          console.error('Failed to load documents from Supabase:', error);
+          return;
+        }
+
+        if (!isMounted || !data) return;
+
+        const mapped = data.map((row) => ({
+          id: row.id as string,
+          url: row.url as string,
+        }));
+
+        setDocuments(mapped);
+        CacheManager.set('documents', mapped, 10 * 60 * 1000);
+      } finally {
+        isLoading = false;
       }
-
-      // Затем загружаем свежие данные из Supabase
-      const { data, error } = await supabase
-        .from('documents')
-        .select('id, url')
-        .order('created_at', { ascending: true });
-
-      if (error) {
-        console.error('Failed to load documents from Supabase:', error);
-        return;
-      }
-
-      if (!isMounted || !data) return;
-
-      const mapped = data.map((row) => ({
-        id: row.id as string,
-        url: row.url as string,
-      }));
-
-      setDocuments(mapped);
-      // Сохраняем в кеш
-      CacheManager.set('documents', mapped, 10 * 60 * 1000); // 10 минут
     };
 
+    // Начальная загрузка — сначала кеш, потом Supabase
+    const cached = CacheManager.get<Document[]>('documents');
+    if (cached && isMounted) {
+      setDocuments(cached);
+    }
     loadDocuments();
 
-    // Realtime подписка
+    // Realtime с debounce — 500ms
+    const debouncedLoad = debounce(loadDocuments, 500);
     const channel = supabase
       .channel('documents_realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'documents' },
-        () => {
-          loadDocuments();
-        }
+        debouncedLoad
       )
       .subscribe();
 
@@ -165,13 +166,13 @@ export default function App() {
     setIsAddModalOpen(true);
   };
 
-  const handleConfirmAdd = (url: string) => {
+  const handleConfirmAdd = (url: string, name?: string) => {
     if (addContext === 'folder') {
-      const optimisticId = `doc-${Date.now()}`;
+      const optimisticId = `doc-${Date.now()}-${Math.random()}`;
       const newDoc = { url, id: optimisticId };
       const updated = [...documents, newDoc];
       setDocuments(updated);
-      
+
       // Обновляем кеш
       CacheManager.set('documents', updated, 10 * 60 * 1000);
 
@@ -198,7 +199,7 @@ export default function App() {
       }
     } else if (addContext === 'usb') {
       if ((window as any).__addUSBFile) {
-        (window as any).__addUSBFile(url);
+        (window as any).__addUSBFile(url, name);
       }
     }
   };
@@ -350,9 +351,10 @@ export default function App() {
           <label className="block mb-3 text-xs uppercase tracking-[0.18em] text-gray-400">
             Пароль
             <input
-              type="text"
+              type="password"
               value={sitePasswordValue}
               onChange={(e) => setSitePasswordValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSiteLogin(); }}
               className="mt-2 w-full rounded-xl border border-[#333] bg-[#0b0b0b] p-3 text-white outline-none focus:border-[#666]"
             />
           </label>
@@ -363,9 +365,6 @@ export default function App() {
           >
             Войти
           </button>
-          <div className="mt-5 text-[11px] text-gray-500">
-            Текущий логин: <span className="text-white">{siteAuthUsername}</span>
-          </div>
         </div>
       </div>
     );
