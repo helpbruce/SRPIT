@@ -99,6 +99,8 @@ export function DocumentStack({
       // Only allow dragging to the right
       if (offset > 0) {
         setDragOffset(offset);
+      } else {
+        setDragOffset(0);
       }
     }
   };

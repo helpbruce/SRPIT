@@ -47,10 +47,13 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [pdaMode, setPdaMode] = useState<'menu' | 'database' | 'bestiary' | 'crypto'>('menu');
   // Local auth state
   const [currentLogin, setCurrentLogin] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<'user' | 'admin'>('user');
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [newSectionName, setNewSectionName] = useState('');
+  const [showNewSectionModal, setShowNewSectionModal] = useState(false);
     
   // Database states
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -164,11 +167,14 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (!isOpen) return;
     try {
       const saved = localStorage.getItem('pda_login');
+      const savedRole = localStorage.getItem('pda_user_role') as 'user' | 'admin' | null;
       if (saved) {
         setCurrentLogin(saved);
+        setCurrentUserRole(savedRole || 'user');
         setShowAuthModal(false);
       } else {
         setCurrentLogin(null);
+        setCurrentUserRole('user');
         setShowAuthModal(true);
       }
     } catch {
@@ -687,8 +693,13 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Неверный логин или пароль');
       return;
     }
-    try { localStorage.setItem('pda_login', authEmail); } catch {}
+    const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
+    try { 
+      localStorage.setItem('pda_login', authEmail);
+      localStorage.setItem('pda_user_role', userRole);
+    } catch {}
     setCurrentLogin(authEmail);
+    setCurrentUserRole(userRole);
     setShowAuthModal(false);
   };
 
@@ -717,14 +728,23 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Ошибка регистрации: ' + insErr.message);
       return;
     }
-    try { localStorage.setItem('pda_login', authEmail); } catch {}
+    const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
+    try { 
+      localStorage.setItem('pda_login', authEmail);
+      localStorage.setItem('pda_user_role', userRole);
+    } catch {}
     setCurrentLogin(authEmail);
+    setCurrentUserRole(userRole);
     setShowAuthModal(false);
   };
 
   const handleLogout = async () => {
-    try { localStorage.removeItem('pda_login'); } catch {}
+    try { 
+      localStorage.removeItem('pda_login');
+      localStorage.removeItem('pda_user_role');
+    } catch {}
     setCurrentLogin(null);
+    setCurrentUserRole('user');
     setShowAuthModal(true);
   };
 
@@ -800,7 +820,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
                 </button>
               )}
               <div className="text-gray-400 text-[10px] font-mono px-2 py-1 rounded border border-[#3a3a3a] bg-[#0f0f0f]">
-                Вы: {currentLogin ?? 'Гость'}
+                Вы: {currentLogin ?? 'Гость'} {currentUserRole === 'admin' && <span className="text-red-400 ml-1">[ADMIN]</span>}
               </div>
               {currentLogin ? (
                 <button

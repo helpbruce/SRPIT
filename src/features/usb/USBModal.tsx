@@ -353,22 +353,6 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
 
   const openViewer = async (file: USBFile, index: number, type: 'photo' | 'video' | 'audio') => {
     playAllSound();
-    if (file.id && file.is_protected) {
-      const key = file.id;
-      if (!unlocked.has(key)) {
-        const hint = file.protected_hint ? `\nПодсказка: ${file.protected_hint}` : '';
-        const input = prompt(`Файл защищён паролем. Введите пароль.${hint}`);
-        if (!input) return;
-        if (input !== file.password_hash) {
-          alert('Неверный пароль');
-          return;
-        }
-        const next = new Set(unlocked);
-        next.add(key);
-        setUnlocked(next);
-        try { sessionStorage.setItem('usb_unlocked', JSON.stringify(Array.from(next))); } catch {}
-      }
-    }
     setViewerFile(file);
     setViewerIndex(index);
     setCurrentType(type);
@@ -722,8 +706,6 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted }: USBModalProps)
                     onClick={async () => {
                       const pwd = prompt('Установите пароль на файл:');
                       if (!pwd || !viewerFile?.id) return;
-                      const confirmPwd = prompt('Повторите пароль:');
-                      if (confirmPwd !== pwd) { alert('Пароли не совпадают'); return; }
                       const hint = prompt('Подсказка (необязательно):') || null;
                       setViewerFile(v => v ? { ...v, is_protected: true, password_hash: pwd, protected_hint: hint } : v);
                       setUsbFiles(prev => {
