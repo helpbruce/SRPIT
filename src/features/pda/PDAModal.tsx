@@ -94,6 +94,7 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [showLoadingSpinner, setShowLoadingSpinner] = useState(true);
   // Discord verification — moved to App.tsx level
   const [discordVerified] = useState(true);
   const [discordChecking] = useState(false);
@@ -229,6 +230,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   // Local auth init on open
   useEffect(() => {
     if (!isOpen) return;
+    setShowLoadingSpinner(true);
     try {
       const saved = localStorage.getItem('pda_login');
       const savedRole = localStorage.getItem('pda_user_role') as 'user' | 'admin' | null;
@@ -247,6 +249,8 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     } catch {
       setShowAuthModal(true);
     }
+    // Скрываем спиннер через 600ms
+    setTimeout(() => setShowLoadingSpinner(false), 600);
   }, [isOpen]);
 
   // Load data from Supabase + кеш + realtime с debounce
@@ -994,6 +998,16 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
       <div className="w-full h-full bg-transparent flex items-center justify-center relative pointer-events-none">
         <div className="w-[85%] h-[85%] bg-[#0a0a0a] border border-[#2a2a2a] overflow-hidden flex flex-col pointer-events-auto rounded-sm">
+          {/* Loading overlay */}
+          {showLoadingSpinner && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-[100]">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 border-4 border-gray-700 border-t-gray-400 rounded-full animate-spin"></div>
+                <div className="text-gray-400 font-mono text-xs">ЗАГРУЗКА PDA...</div>
+              </div>
+            </div>
+          )}
+
           {/* Header */}
           <div className="bg-gradient-to-b from-[#2a2a2a] to-[#1a1a1a] h-10 px-4 flex items-center justify-between border-b border-[#3a3a3a] flex-shrink-0 relative">
             <div className="flex items-center gap-2">
@@ -1211,9 +1225,14 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
       </div>
       <div className="flex items-center gap-2">
-        <Search className="w-4 h-4 text-gray-600" />
-
-
+        <Search className="w-4 h-4 text-gray-600 flex-shrink-0" />
+        <input
+          type="text"
+          value={bestiarySearch}
+          onChange={(e) => setBestiarySearch(e.target.value)}
+          placeholder="Поиск по названию или описанию..."
+          className="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded px-2 py-1 text-gray-400 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+        />
       </div>
     </div>
 

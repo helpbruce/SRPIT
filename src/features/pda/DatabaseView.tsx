@@ -294,6 +294,50 @@ export function DatabaseView({
     setEditTasksExpanded(false);
   };
 
+  // Удаление задачи с логированием в записи
+  const deleteTaskWithLog = async (taskId: string) => {
+    if (!selectedCharacter) return;
+    const taskToDelete = selectedCharacter.tasks.find(t => t.id === taskId);
+    if (!taskToDelete) return;
+
+    const updatedTasks = selectedCharacter.tasks.filter(t => t.id !== taskId);
+    const updated = { ...selectedCharacter, tasks: updatedTasks };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
+
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    if (supabase) {
+      await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    }
+
+    // Логируем удаление
+    const now = new Date().toISOString();
+    const day = String(new Date(now).getDate()).padStart(2, '0');
+    const month = String(new Date(now).getMonth() + 1).padStart(2, '0');
+    const hours = String(new Date(now).getHours()).padStart(2, '0');
+    const minutes = String(new Date(now).getMinutes()).padStart(2, '0');
+    const logEntry: CharacterEntry = {
+      id: crypto.randomUUID(),
+      character_id: selectedCharacter.id,
+      author_login: currentLogin || 'Аноним',
+      content: `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${currentLogin || 'Аноним'} ]\n[ЗАДАЧА УДАЛЕНА] ${taskToDelete.description}${taskToDelete.timeLimit ? ` | Время: ${taskToDelete.timeLimit}` : ''}${taskToDelete.reward ? ` | Награда: ${taskToDelete.reward}` : ''}`,
+      entry_type: 'edit',
+      is_update: true,
+      created_at: now,
+      target_section: 'tasks',
+      target_task_id: taskId,
+    };
+    if (supabase) {
+      await supabase.from(entriesTableName).insert(logEntry);
+    }
+    // Перезагружаем записи
+    const { data } = await supabase.from(entriesTableName).select('*').eq('character_id', selectedCharacter.id).order('created_at', { ascending: true });
+    if (data) setEntries(data);
+  };
+
   // ===== INLINE EDIT FUNCTIONS FOR DETAIL VIEW =====
   const startDetailEdit = () => {
     playAllSound();
@@ -1005,7 +1049,22 @@ export function DatabaseView({
                             : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
+                        {/* Кнопка удаления справа сверху */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            playAllSound();
+                            if (confirm('Удалить задачу?')) {
+                              deleteTaskWithLog(task.id);
+                            }
+                          }}
+                          className="absolute top-2 right-2 p-1 text-red-500/60 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          title="Удалить задачу"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="flex items-center gap-2 mb-1 pr-7">
                           <div className={`w-2 h-2 rounded-full ${task.status === 'в работе' ? 'bg-yellow-500' : task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'}`}></div>
                           <span className={`font-mono text-[10px] ${task.status === 'в работе' ? 'text-yellow-400' : task.status === 'провалено' ? 'text-red-400' : 'text-green-400'}`}>{task.status.toUpperCase()}</span>
                         </div>

@@ -99,6 +99,24 @@ DROP POLICY IF EXISTS "Anyone can insert pda_character_entries" ON pda_character
 CREATE POLICY "Anyone can insert pda_character_entries" ON pda_character_entries
   FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Anyone can update pda_character_entries" ON pda_character_entries;
+CREATE POLICY "Anyone can update pda_character_entries" ON pda_character_entries
+  FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Anyone can delete pda_character_entries" ON pda_character_entries;
+CREATE POLICY "Anyone can delete pda_character_entries" ON pda_character_entries
+  FOR DELETE USING (true);
+
+-- Добавляем missing колонку target_task_id если её нет
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'pda_character_entries' AND column_name = 'target_task_id'
+  ) THEN
+    ALTER TABLE pda_character_entries ADD COLUMN target_task_id UUID;
+  END IF;
+END $$;
+
 -- ============================================
 -- 4. Секретная база данных (АБД) — персонажи
 -- ============================================
@@ -161,6 +179,23 @@ CREATE POLICY "Anyone can read secret_character_entries" ON secret_character_ent
 DROP POLICY IF EXISTS "Anyone can insert secret_character_entries" ON secret_character_entries;
 CREATE POLICY "Anyone can insert secret_character_entries" ON secret_character_entries
   FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Anyone can update secret_character_entries" ON secret_character_entries;
+CREATE POLICY "Anyone can update secret_character_entries" ON secret_character_entries
+  FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Anyone can delete secret_character_entries" ON secret_character_entries;
+CREATE POLICY "Anyone can delete secret_character_entries" ON secret_character_entries
+  FOR DELETE USING (true);
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'secret_character_entries' AND column_name = 'target_task_id'
+  ) THEN
+    ALTER TABLE secret_character_entries ADD COLUMN target_task_id UUID;
+  END IF;
+END $$;
 
 -- ============================================
 -- 6. Документы (папка)
