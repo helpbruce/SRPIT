@@ -816,6 +816,10 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
 
   // Local auth actions
   const handleLogin = async () => {
+    if (!supabase) {
+      alert('Ошибка подключения к базе данных.\nПроверьте переменные VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY в Vercel.');
+      return;
+    }
     if (!authEmail || !authPassword) {
       alert('Введите логин и пароль');
       return;
