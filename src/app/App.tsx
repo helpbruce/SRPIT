@@ -682,19 +682,6 @@ export default function App() {
             <X className="w-6 h-6" />
           </button>
 
-          <button
-            onClick={() => {
-              handleDeleteDocument(fullscreenIndex);
-              if (fullscreenIndex >= documents.length - 1) {
-                setFullscreenIndex(null);
-              }
-            }}
-            className="absolute top-6 left-6 p-3 bg-red-900/70 border-2 border-red-700 text-white hover:bg-red-800/90 transition-all duration-200 hover:scale-110 active:scale-95 z-10 rounded-lg flex items-center justify-center"
-            title="Удалить текущей документ"
-          >
-            <Trash2 className="w-6 h-6" />
-          </button>
-
           {fullscreenIndex > 0 && (
             <button
               onClick={() => setFullscreenIndex(fullscreenIndex - 1)}
