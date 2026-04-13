@@ -4,6 +4,9 @@ import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { debounce } from '../../shared/lib/realtimeUtils';
 
+// TTL для кэша: 24 часа
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
 interface Marker {
   id: string;
   x: number;
@@ -137,7 +140,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           id: row.marker.id ?? row.id,
         }));
         setMarkers(mapped);
-        CacheManager.set('map_markers', mapped, 10 * 60 * 1000);
+        CacheManager.set('map_markers', mapped, CACHE_TTL);
       }
 
       if (drawingsRes.error) {
@@ -148,7 +151,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           id: row.path.id ?? row.id,
         }));
         setDrawings(mapped);
-        CacheManager.set('map_drawings', mapped, 10 * 60 * 1000);
+        CacheManager.set('map_drawings', mapped, CACHE_TTL);
       }
     };
 
@@ -323,7 +326,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
 
       const updated = [...markers, newMarker];
       setMarkers(updated);
-      CacheManager.set('map_markers', updated, 10 * 60 * 1000);
+      CacheManager.set('map_markers', updated, CACHE_TTL);
 
       if (supabase) {
         supabase
@@ -333,7 +336,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
             if (error) {
               console.error('Failed to insert map_marker into Supabase:', error);
               setMarkers(markers);
-              CacheManager.set('map_markers', markers, 10 * 60 * 1000);
+              CacheManager.set('map_markers', markers, CACHE_TTL);
             }
           });
       }
@@ -458,7 +461,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       };
       const updated = [...drawings, newDrawing];
       setDrawings(updated);
-      CacheManager.set('map_drawings', updated, 10 * 60 * 1000);
+      CacheManager.set('map_drawings', updated, CACHE_TTL);
 
       if (supabase) {
         supabase
@@ -468,7 +471,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
             if (error) {
               console.error('Failed to insert map_drawing into Supabase:', error);
               setDrawings(drawings);
-              CacheManager.set('map_drawings', drawings, 10 * 60 * 1000);
+              CacheManager.set('map_drawings', drawings, CACHE_TTL);
             }
           });
       }
@@ -476,7 +479,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     }
 
     if (isDrawing && selectedTool === 'eraser' && pendingEraseRef.current.length > 0) {
-      CacheManager.set('map_drawings', pendingEraseRef.current, 10 * 60 * 1000);
+      CacheManager.set('map_drawings', pendingEraseRef.current, CACHE_TTL);
       syncDrawingsToSupabase(pendingEraseRef.current);
       pendingEraseRef.current = [];
     }
@@ -485,7 +488,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     if (draggingMarker && supabase) {
       const marker = markers.find(m => m.id === draggingMarker);
       if (marker) {
-        CacheManager.set('map_markers', markers, 10 * 60 * 1000);
+        CacheManager.set('map_markers', markers, CACHE_TTL);
         supabase
           .from('map_markers')
           .update({ marker })
@@ -530,7 +533,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         m.id === editingMarker ? { ...m, note: noteText } : m
       );
       setMarkers(updated);
-      CacheManager.set('map_markers', updated, 10 * 60 * 1000);
+      CacheManager.set('map_markers', updated, CACHE_TTL);
       setEditingMarker(null);
       setNoteText('');
 
@@ -557,7 +560,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     const updated = markers.filter(m => m.id !== markerId);
     setMarkers(updated);
     setEditingMarker(null);
-    CacheManager.set('map_markers', updated, 10 * 60 * 1000);
+    CacheManager.set('map_markers', updated, CACHE_TTL);
 
     if (supabase && markerToDelete) {
       supabase
@@ -568,7 +571,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
           if (error) {
             console.error('Failed to delete map_marker from Supabase:', error);
             setMarkers(markers);
-            CacheManager.set('map_markers', markers, 10 * 60 * 1000);
+            CacheManager.set('map_markers', markers, CACHE_TTL);
           }
         });
     }
@@ -577,7 +580,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
   const clearDrawings = () => {
     if (confirm('Очистить все рисунки?')) {
       setDrawings([]);
-      CacheManager.set('map_drawings', [], 10 * 60 * 1000);
+      CacheManager.set('map_drawings', [], CACHE_TTL);
 
       if (supabase) {
         supabase

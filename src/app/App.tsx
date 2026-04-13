@@ -13,6 +13,9 @@ import { debounce } from '../shared/lib/realtimeUtils';
 import { User } from '@supabase/supabase-js';
 import { verifyDiscordMembership, isDiscordConfigured } from '../features/pda/discordAuth';
 
+// TTL для кэша: 24 часа
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
 interface Document {
   url: string;
   id: string;
@@ -115,7 +118,7 @@ export default function App() {
         }));
 
         setDocuments(mapped);
-        CacheManager.set('documents', mapped, 10 * 60 * 1000);
+        CacheManager.set('documents', mapped, CACHE_TTL);
       } finally {
         isLoading = false;
       }
@@ -145,6 +148,88 @@ export default function App() {
     };
   }, []);
 
+  // Предзагрузка данных в кэш при старте приложения (фоновая загрузка)
+  useEffect(() => {
+    if (!supabase) return;
+
+    const preloadData = async () => {
+      try {
+        // Загружаем USB файлы
+        const { data: usbData, error: usbError } = await supabase
+          .from('usb_files')
+          .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+          .order('created_at', { ascending: true });
+
+        if (!usbError && usbData) {
+          const usbFiles: { photo: any[], video: any[], audio: any[] } = { photo: [], video: [], audio: [] };
+          for (const row of usbData) {
+            const type = row.type as 'photo' | 'video' | 'audio';
+            usbFiles[type].push({
+              id: row.id as string,
+              url: row.url as string,
+              name: row.name as string,
+              createdAt: (row.created_at_label as string) ?? '',
+              is_protected: (row.is_protected as boolean) ?? false,
+              password_hash: (row.password_hash as string) ?? null,
+              protected_hint: (row.protected_hint as string) ?? null,
+            });
+          }
+          CacheManager.set('usb_files', usbFiles, CACHE_TTL);
+        }
+
+        // Загружаем персонажей PDA
+        const { data: charsData, error: charsError } = await supabase
+          .from('pda_characters')
+          .select('*')
+          .order('updated_at', { ascending: true });
+
+        if (!charsError && charsData) {
+          const characters = charsData.map((row: any) => ({
+            id: row.id,
+            photo: row.photo ?? '/icons/nodata.png',
+            name: row.name ?? '',
+            birthDate: row.birthdate ?? '',
+            faction: row.faction ?? '',
+            rank: row.rank ?? '',
+            status: row.status ?? 'Неизвестен',
+            shortInfo: row.shortinfo ?? '',
+            fullInfo: row.fullinfo ?? '',
+            notes: row.notes ?? '',
+            tasks: (row.tasks ?? []) as any[],
+            caseNumber: row.casenumber ?? '',
+          }));
+          CacheManager.set('pda_characters', characters, CACHE_TTL);
+        }
+
+        // Загружаем бестиарий
+        const { data: bestiaryData, error: bestiaryError } = await supabase
+          .from('bestiary_entries')
+          .select('*')
+          .order('updated_at', { ascending: true });
+
+        if (!bestiaryError && bestiaryData) {
+          const bestiaryEntries = bestiaryData.map((row: any) => ({
+            id: row.id,
+            type: row.type,
+            name: row.name,
+            photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
+            shortInfo: row.short_info ?? '',
+            fullInfo: row.full_info ?? '',
+            dangerLevel: row.danger_level ?? 'средний',
+            anomalyNames: row.anomaly_names ?? [],
+          }));
+          CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
+        }
+
+        console.log('✓ Данные предзагружены в кэш');
+      } catch (e) {
+        console.warn('Ошибка предзагрузки данных:', e);
+      }
+    };
+
+    preloadData();
+  }, []);
+
   useEffect(() => {
     if (!isFolderOpen) {
       setCurrentIndex(0);
@@ -164,10 +249,7 @@ export default function App() {
     if (isAnyModalOpen) return;
 
     setIsPDAAnimating(true);
-    setShowPDALoading(true);
-
-    setTimeout(() => setShowPDALoading(false), 1500);
-    setTimeout(() => setIsPDAOpen(true), 1800);
+    setTimeout(() => setIsPDAOpen(true), 800);
   };
 
   const handlePDAClose = () => {
@@ -188,7 +270,7 @@ export default function App() {
       setDocuments(updated);
 
       // Обновляем кеш
-      CacheManager.set('documents', updated, 10 * 60 * 1000);
+      CacheManager.set('documents', updated, CACHE_TTL);
 
       if (supabase) {
         supabase
@@ -199,7 +281,7 @@ export default function App() {
               console.error('Failed to insert document into Supabase:', error);
               // Откатываем при ошибке
               setDocuments(documents);
-              CacheManager.set('documents', documents, 10 * 60 * 1000);
+              CacheManager.set('documents', documents, CACHE_TTL);
               return;
             }
 
@@ -208,7 +290,7 @@ export default function App() {
               doc.id === optimisticId ? { ...doc, id: realId } : doc
             );
             setDocuments(finalDocs);
-            CacheManager.set('documents', finalDocs, 10 * 60 * 1000);
+            CacheManager.set('documents', finalDocs, CACHE_TTL);
           });
       }
     } else if (addContext === 'usb') {
@@ -228,7 +310,7 @@ export default function App() {
     setCurrentIndex(Math.min(currentIndex, newDocs.length - 1));
     
     // Обновляем кеш
-    CacheManager.set('documents', newDocs, 10 * 60 * 1000);
+    CacheManager.set('documents', newDocs, CACHE_TTL);
 
     // Удаляем из Supabase
     if (supabase) {
@@ -241,7 +323,7 @@ export default function App() {
             console.error('Failed to delete document from Supabase:', error);
             // Откатываем изменения при ошибке
             setDocuments(documents);
-            CacheManager.set('documents', documents, 10 * 60 * 1000);
+            CacheManager.set('documents', documents, CACHE_TTL);
           }
         });
     }

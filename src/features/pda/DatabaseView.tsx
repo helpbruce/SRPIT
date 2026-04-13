@@ -3,6 +3,9 @@ import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List,
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
+// TTL для кэша: 24 часа
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
 interface Character {
   id: string;
   photo: string;
@@ -24,6 +27,10 @@ interface Task {
   status: 'в работе' | 'провалено' | 'выполнено';
   reward?: string;
   timeLimit?: string;
+  author_login?: string; // Кто создал задачу
+  created_at?: string; // Когда создана
+  updated_by?: string; // Кто последним редактировал
+  updated_at?: string; // Когда редактировали
 }
 
 interface CharacterEntry {
@@ -233,7 +240,7 @@ export function DatabaseView({
       : characters.map(c => c.id === editForm.id ? editForm : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
 
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const payload = {
@@ -258,7 +265,7 @@ export function DatabaseView({
         console.error(`Failed to upsert ${tableName} in Supabase:`, error);
         alert('Ошибка сохранения: ' + error.message);
         setCharacters(characters);
-        CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+        CacheManager.set(cacheKey, characters, CACHE_TTL);
         return;
       }
     }
@@ -294,12 +301,15 @@ export function DatabaseView({
       return;
     }
 
+    const now = new Date().toISOString();
     const newTask: Task = {
       id: crypto.randomUUID(),
       description: taskInput.description.trim(),
       status: 'в работе',
       reward: taskInput.reward.trim(),
       timeLimit: taskInput.timeLimit.trim(),
+      author_login: currentLogin || 'Аноним',
+      created_at: now,
     };
     const updatedTasks = [...(selectedCharacter.tasks || []), newTask];
     const updatedCharacter = { ...selectedCharacter, tasks: updatedTasks };
@@ -308,7 +318,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updatedCharacter : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
 
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const { error } = await supabase.from(tableName).update({ tasks: updatedTasks }).eq('id', selectedCharacter.id);
@@ -316,7 +326,13 @@ export function DatabaseView({
       console.error(`Failed to update ${tableName} tasks:`, error);
     }
 
-    addEntry(`Задача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`, 'task', false, newTask.id);
+    // Формируем текст для записи с информацией о создателе
+    const day = String(new Date(now).getDate()).padStart(2, '0');
+    const month = String(new Date(now).getMonth() + 1).padStart(2, '0');
+    const hours = String(new Date(now).getHours()).padStart(2, '0');
+    const minutes = String(new Date(now).getMinutes()).padStart(2, '0');
+    const taskInfo = `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${currentLogin || 'Аноним'} ]\nЗадача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`;
+    addEntry(taskInfo, 'task', false, newTask.id);
     setTaskInput({ description: '', reward: '', timeLimit: '' });
     setDetailSection('entries');
   };
@@ -336,7 +352,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const payload = {
       id: detailForm.id,
@@ -358,7 +374,7 @@ export function DatabaseView({
       console.error('Failed to save character:', error);
       alert('Ошибка сохранения: ' + error.message);
       setCharacters(characters);
-      CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+      CacheManager.set(cacheKey, characters, CACHE_TTL);
     }
     setDetailEditMode(false);
     setDetailForm(null);
@@ -376,7 +392,7 @@ export function DatabaseView({
       const updated = characters.filter(c => c.id !== selectedCharacter.id);
       setCharacters(updated);
       const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+      CacheManager.set(cacheKey, updated, CACHE_TTL);
       if (supabase) {
         await supabase.from(isSecret ? 'secret_characters' : 'pda_characters').delete().eq('id', selectedCharacter.id);
       }
@@ -393,7 +409,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ fullinfo: fullInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -421,7 +437,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ shortinfo: shortInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -449,7 +465,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ notes: notesText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -483,17 +499,26 @@ export function DatabaseView({
   const saveTaskEdit = async () => {
     playSaveSound();
     if (!editingTask || !selectedCharacter) return;
+    const now = new Date().toISOString();
     const updatedTasks = selectedCharacter.tasks.map(t =>
-      t.id === editingTask.id ? { ...t, description: editingTask.description, status: editingTask.status as Task['status'], reward: editingTask.reward, timeLimit: editingTask.timeLimit } : t
+      t.id === editingTask.id ? {
+        ...t,
+        description: editingTask.description,
+        status: editingTask.status as Task['status'],
+        reward: editingTask.reward,
+        timeLimit: editingTask.timeLimit,
+        updated_by: currentLogin || 'Аноним',
+        updated_at: now,
+      } : t
     );
     const updated = { ...selectedCharacter, tasks: updatedTasks };
     setSelectedCharacter(updated);
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: now }).eq('id', selectedCharacter.id);
     // Log the task edit
     const origTask = selectedCharacter.tasks.find(t => t.id === editingTask.id);
     if (origTask && supabase) {
@@ -503,14 +528,25 @@ export function DatabaseView({
       if (editingTask.timeLimit !== (origTask.timeLimit || '')) changes.push(`Время: ${editingTask.timeLimit}`);
       if (editingTask.reward !== (origTask.reward || '')) changes.push(`Награда: ${editingTask.reward}`);
       if (changes.length > 0) {
+        // Формируем дату для записи
+        const day = String(new Date(now).getDate()).padStart(2, '0');
+        const month = String(new Date(now).getMonth() + 1).padStart(2, '0');
+        const hours = String(new Date(now).getHours()).padStart(2, '0');
+        const minutes = String(new Date(now).getMinutes()).padStart(2, '0');
+
+        // Информация о создателе (если есть) и редакторе
+        const creatorInfo = origTask.author_login ? `Созд: ${origTask.author_login}` : '';
+        const editorInfo = `upd? ${currentLogin || 'Аноним'}`;
+        const metaInfo = creatorInfo ? `${creatorInfo} | ${editorInfo}` : editorInfo;
+
         const logEntry: CharacterEntry = {
           id: crypto.randomUUID(),
           character_id: selectedCharacter.id,
           author_login: currentLogin || 'Аноним',
-          content: `[ЗАДАЧА ИЗМЕНЕНА] ${changes.join(' | ')}`,
+          content: `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${metaInfo} ]\n[ЗАДАЧА ИЗМЕНЕНА] ${changes.join(' | ')}`,
           entry_type: 'edit',
           is_update: true,
-          created_at: new Date().toISOString(),
+          created_at: now,
           target_section: 'tasks',
           target_task_id: editingTask.id,
         };
@@ -528,12 +564,15 @@ export function DatabaseView({
       return;
     }
     if (!supabase || !selectedCharacter) return;
+    const now = new Date().toISOString();
     const task: Task = {
       id: crypto.randomUUID(),
       description: newTaskForm.description.trim(),
       status: 'в работе',
       reward: newTaskForm.reward.trim(),
       timeLimit: newTaskForm.timeLimit.trim(),
+      author_login: currentLogin || 'Аноним',
+      created_at: now,
     };
     const updatedTasks = [...(selectedCharacter.tasks || []), task];
     const updated = { ...selectedCharacter, tasks: updatedTasks };
@@ -541,18 +580,23 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: now }).eq('id', selectedCharacter.id);
     // Log the new task
+    const day = String(new Date(now).getDate()).padStart(2, '0');
+    const month = String(new Date(now).getMonth() + 1).padStart(2, '0');
+    const hours = String(new Date(now).getHours()).padStart(2, '0');
+    const minutes = String(new Date(now).getMinutes()).padStart(2, '0');
+    const taskInfo = `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${currentLogin || 'Аноним'} ]\nЗадача: ${task.description}${task.timeLimit ? ` | Время: ${task.timeLimit}` : ''}${task.reward ? ` | Награда: ${task.reward}` : ''}`;
     const logEntry: CharacterEntry = {
       id: crypto.randomUUID(),
       character_id: selectedCharacter.id,
       author_login: currentLogin || 'Аноним',
-      content: `Задача: ${task.description}${task.timeLimit ? ` | Время: ${task.timeLimit}` : ''}${task.reward ? ` | Награда: ${task.reward}` : ''}`,
+      content: taskInfo,
       entry_type: 'task',
       is_update: false,
-      created_at: new Date().toISOString(),
+      created_at: now,
       target_section: 'tasks',
       target_task_id: task.id,
     };
@@ -580,7 +624,7 @@ export function DatabaseView({
                   const updated = characters.filter(c => c.id !== editForm.id);
                   setCharacters(updated);
                   const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-                  CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+                  CacheManager.set(cacheKey, updated, CACHE_TTL);
 
                   if (supabase) {
                     supabase
@@ -591,7 +635,7 @@ export function DatabaseView({
                         if (error) {
                           console.error('Failed to delete character from Supabase:', error);
                           setCharacters(characters);
-                          CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+                          CacheManager.set(cacheKey, characters, CACHE_TTL);
                         }
                       });
                   }
@@ -973,32 +1017,65 @@ export function DatabaseView({
 
                 {/* Список задач */}
                 {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
-                  selectedCharacter.tasks.map(task => (
-                    <div
-                      key={task.id}
-                      onDoubleClick={() => startTaskEdit(task)}
-                      className={`group relative p-3 rounded-lg border cursor-pointer transition-all ${
-                        task.id === highlightedTaskId
-                          ? 'bg-green-900/30 border-green-500/60 ring-2 ring-green-500/30'
-                          : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
-                      }`}
-                    >
-                      <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                        <span className={`text-gray-600 font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
-                          [Двойной клик — редактировать]
-                        </span>
+                  selectedCharacter.tasks.map(task => {
+                    // Форматируем дату создания
+                    const createdDate = task.created_at ? new Date(task.created_at) : null;
+                    const createdDateStr = createdDate ? (() => {
+                      const day = String(createdDate.getDate()).padStart(2, '0');
+                      const month = String(createdDate.getMonth() + 1).padStart(2, '0');
+                      const hours = String(createdDate.getHours()).padStart(2, '0');
+                      const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+                      return `${day}.${month}.2009 | ${hours}:${minutes}`;
+                    })() : null;
+
+                    // Форматируем дату обновления
+                    const updatedDate = task.updated_at ? new Date(task.updated_at) : null;
+                    const updatedDateStr = updatedDate ? (() => {
+                      const day = String(updatedDate.getDate()).padStart(2, '0');
+                      const month = String(updatedDate.getMonth() + 1).padStart(2, '0');
+                      const hours = String(updatedDate.getHours()).padStart(2, '0');
+                      const minutes = String(updatedDate.getMinutes()).padStart(2, '0');
+                      return `${day}.${month}.2009 | ${hours}:${minutes}`;
+                    })() : null;
+
+                    return (
+                      <div
+                        key={task.id}
+                        onDoubleClick={() => startTaskEdit(task)}
+                        className={`group relative p-3 rounded-lg border cursor-pointer transition-all ${
+                          task.id === highlightedTaskId
+                            ? 'bg-green-900/30 border-green-500/60 ring-2 ring-green-500/30'
+                            : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className={`w-2 h-2 rounded-full ${task.status === 'в работе' ? 'bg-yellow-500' : task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                          <span className={`font-mono text-[10px] ${task.status === 'в работе' ? 'text-yellow-400' : task.status === 'провалено' ? 'text-red-400' : 'text-green-400'}`}>{task.status.toUpperCase()}</span>
+                        </div>
+                        <div className="font-mono text-xs text-gray-200 whitespace-pre-wrap">{task.description}</div>
+                        <div className="mt-1 text-[10px] font-mono text-gray-500">
+                          {task.timeLimit ? `Срок: ${task.timeLimit}` : 'Срок не указан'}
+                          {task.reward ? ` • Награда: ${task.reward}` : ''}
+                        </div>
+
+                        {/* Информация о создателе и редакторе (при наведении) */}
+                        {(task.author_login || task.updated_by) && (
+                          <div className="mt-2 pt-2 border-t border-[#2a2a2a] opacity-0 group-hover:opacity-100 transition-opacity">
+                            {task.author_login && createdDateStr && (
+                              <div className="text-[9px] font-mono text-gray-400">
+                                <span className="text-gray-500">Созд:</span> [ {createdDateStr} (UTC+3:00) | {task.author_login} ]
+                              </div>
+                            )}
+                            {task.updated_by && updatedDateStr && (
+                              <div className="text-[9px] font-mono text-yellow-400/70">
+                                <span className="text-yellow-500/70">upd?:</span> [ {updatedDateStr} (UTC+3:00) | {task.updated_by} ]
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className={`w-2 h-2 rounded-full ${task.status === 'в работе' ? 'bg-yellow-500' : task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'}`}></div>
-                        <span className={`font-mono text-[10px] ${task.status === 'в работе' ? 'text-yellow-400' : task.status === 'провалено' ? 'text-red-400' : 'text-green-400'}`}>{task.status.toUpperCase()}</span>
-                      </div>
-                      <div className="font-mono text-xs text-gray-200 whitespace-pre-wrap">{task.description}</div>
-                      <div className="mt-1 text-[10px] font-mono text-gray-500">
-                        {task.timeLimit ? `Срок: ${task.timeLimit}` : 'Срок не указан'}
-                        {task.reward ? ` • Награда: ${task.reward}` : ''}
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className={`${textMuted} font-mono text-xs`}>Задач нет.</div>
                 )}

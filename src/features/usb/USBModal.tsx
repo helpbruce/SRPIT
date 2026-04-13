@@ -4,6 +4,9 @@ import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { debounce } from '../../shared/lib/realtimeUtils';
 
+// TTL для кэша: 24 часа
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
 interface USBFile {
   id?: string;
   url: string;
@@ -29,7 +32,13 @@ interface USBModalProps {
 }
 
 export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBModalProps) {
-  const [usbView, setUsbView] = useState<'root' | 'photo' | 'video' | 'audio'>('root');
+  const [usbView, setUsbView] = useState<'root' | 'photo' | 'video' | 'audio'>(() => {
+    try {
+      return (localStorage.getItem('usb_last_view') as any) || 'root';
+    } catch {
+      return 'root';
+    }
+  });
   const [usbFiles, setUsbFiles] = useState<USBFiles>({
     photo: [],
     video: [],
@@ -168,7 +177,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
         }
 
         setUsbFiles(next);
-        CacheManager.set('usb_files', next, 10 * 60 * 1000);
+        CacheManager.set('usb_files', next, CACHE_TTL);
       } finally {
         isLoading = false;
       }
@@ -201,11 +210,6 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
   useEffect(() => {
     if (isOpen) {
       playStartSound();
-      setLoadingText('ЗАГРУЗКА USB...');
-      setShowLoading(true);
-      setTimeout(() => {
-        setShowLoading(false);
-      }, 1500);
     }
   }, [isOpen]);
 
@@ -286,7 +290,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
 
     setUsbFiles(updated);
     // Обновляем кеш
-    CacheManager.set('usb_files', updated, 10 * 60 * 1000);
+    CacheManager.set('usb_files', updated, CACHE_TTL);
 
     if (supabase) {
       supabase
@@ -303,7 +307,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
             console.error('Failed to insert usb_file into Supabase:', error);
             // Откатываем при ошибке
             setUsbFiles(usbFiles);
-            CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
+            CacheManager.set('usb_files', usbFiles, CACHE_TTL);
             return;
           }
 
@@ -327,7 +331,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
               filesOfType[index] = { ...filesOfType[index], id: insertedId };
             }
 
-            CacheManager.set('usb_files', updatedWithId, 10 * 60 * 1000);
+            CacheManager.set('usb_files', updatedWithId, CACHE_TTL);
             return updatedWithId;
           });
         });
@@ -345,12 +349,8 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
 
   const openFolder = (folderType: 'photo' | 'video' | 'audio') => {
     playAllSound();
-    setLoadingText('ОТКРЫТИЕ ПАПКИ...');
-    setShowLoading(true);
-    setTimeout(() => {
-      setUsbView(folderType);
-      setShowLoading(false);
-    }, 1200);
+    setUsbView(folderType);
+    try { localStorage.setItem('usb_last_view', folderType); } catch {}
   };
 
   const openViewer = async (file: USBFile, index: number, type: 'photo' | 'video' | 'audio') => {
@@ -395,7 +395,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
 
     setUsbFiles(updated);
     // Обновляем кеш
-    CacheManager.set('usb_files', updated, 10 * 60 * 1000);
+    CacheManager.set('usb_files', updated, CACHE_TTL);
 
     if (supabase && deletedFile) {
       const query = supabase.from('usb_files').delete();
@@ -413,7 +413,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
           console.error('Failed to delete usb_file from Supabase:', error);
           // Откатываем при ошибке
           setUsbFiles(usbFiles);
-          CacheManager.set('usb_files', usbFiles, 10 * 60 * 1000);
+          CacheManager.set('usb_files', usbFiles, CACHE_TTL);
         }
       });
     }
@@ -549,6 +549,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
                       onClick={() => {
                         playAllSound();
                         setUsbView('root');
+                        try { localStorage.setItem('usb_last_view', 'root'); } catch {}
                       }}
                       style={{ fontFamily: 'Tahoma, sans-serif' }}
                     >
@@ -750,7 +751,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
                         const arr = copy[currentType];
                         const i = arr.findIndex(f => f.id === viewerFile!.id);
                         if (i !== -1) arr[i] = { ...arr[i], is_protected: true, password_hash: pwd, protected_hint: hint };
-                        CacheManager.set('usb_files', copy, 10 * 60 * 1000);
+                        CacheManager.set('usb_files', copy, CACHE_TTL);
                         return copy;
                       });
                       if (supabase) {
@@ -776,7 +777,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
                         const arr = copy[currentType];
                         const i = arr.findIndex(f => f.id === viewerFile!.id);
                         if (i !== -1) arr[i] = { ...arr[i], is_protected: false, password_hash: null, protected_hint: null };
-                        CacheManager.set('usb_files', copy, 10 * 60 * 1000);
+                        CacheManager.set('usb_files', copy, CACHE_TTL);
                         return copy;
                       });
                       if (viewerFile.id) {

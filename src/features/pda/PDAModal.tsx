@@ -6,6 +6,9 @@ import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
 
+// TTL для кэша: 24 часа
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+
 class PDAModalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
     super(props);
@@ -40,6 +43,12 @@ interface Task {
   id: string;
   description: string;
   status: 'в работе' | 'провалено' | 'выполнено';
+  reward?: string;
+  timeLimit?: string;
+  author_login?: string; // Кто создал задачу
+  created_at?: string; // Когда создана
+  updated_by?: string; // Кто последним редактировал
+  updated_at?: string; // Когда редактировали
 }
 
 interface Character {
@@ -280,7 +289,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             caseNumber: row.casenumber ?? '',
           }));
           setCharacters(mapped);
-          CacheManager.set('pda_characters', mapped, 10 * 60 * 1000);
+          CacheManager.set('pda_characters', mapped, CACHE_TTL);
         }
 
         if (bestiaryRes.error) {
@@ -297,7 +306,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             anomalyNames: row.anomaly_names ?? [],
           }));
           setBestiaryEntries(mapped);
-          CacheManager.set('bestiary_entries', mapped, 10 * 60 * 1000);
+          CacheManager.set('bestiary_entries', mapped, CACHE_TTL);
         }
       } finally {
         isLoading = false;
@@ -365,7 +374,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           notes: row.notes ?? '', tasks: (row.tasks ?? []) as Task[], caseNumber: row.casenumber ?? '',
         }));
         setSecretCharacters(mapped);
-        CacheManager.set('secret_characters', mapped, 10 * 60 * 1000);
+        CacheManager.set('secret_characters', mapped, CACHE_TTL);
       } finally { isLoading = false; }
     };
 
@@ -480,7 +489,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       const updated = isCreating 
         ? [...characters, editForm]
         : characters.map(c => c.id === editForm.id ? editForm : c);
-      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+      CacheManager.set('pda_characters', updated, CACHE_TTL);
 
       supabase
         .from('pda_characters')
@@ -490,7 +499,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             console.error('Failed to upsert pda_character in Supabase:', error);
             alert('Ошибка сохранения: ' + error.message);
             // Откатываем кеш при ошибке
-            CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
+            CacheManager.set('pda_characters', characters, CACHE_TTL);
           } else {
             console.log('Character saved successfully');
           }
@@ -507,7 +516,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (confirm('Удалить персонажа?')) {
       const updated = characters.filter(c => c.id !== id);
       setCharacters(updated);
-      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+      CacheManager.set('pda_characters', updated, CACHE_TTL);
       
       if (selectedCharacter?.id === id) {
         setSelectedCharacter(null);
@@ -523,7 +532,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
               console.error('Failed to delete pda_character from Supabase:', error);
               // Откатываем при ошибке
               setCharacters(characters);
-              CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
+              CacheManager.set('pda_characters', characters, CACHE_TTL);
             }
           });
       }
@@ -555,12 +564,15 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const addTask = () => {
     playAllSound();
     if (!editForm) return;
+    const now = new Date().toISOString();
     const newTask: Task = {
       id: `task-${Date.now()}`,
       description: '',
       status: 'в работе',
       reward: '',
-      timeLimit: ''
+      timeLimit: '',
+      author_login: currentLogin || 'Аноним',
+      created_at: now,
     };
     setEditForm({
       ...editForm,
@@ -571,9 +583,27 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const updateTask = (taskId: string, updates: Partial<Task>) => {
     playAllSound();
     if (!editForm) return;
+    // Если изменяются важные поля, добавляем информацию о редакторе
+    const now = new Date().toISOString();
     setEditForm({
       ...editForm,
-      tasks: editForm.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t)
+      tasks: editForm.tasks.map(t => {
+        if (t.id === taskId) {
+          const updated = { ...t, ...updates };
+          // Если изменились description, status, reward или timeLimit - записываем кто редактировал
+          if (
+            (updates.description !== undefined && updates.description !== t.description) ||
+            (updates.status !== undefined && updates.status !== t.status) ||
+            (updates.reward !== undefined && updates.reward !== t.reward) ||
+            (updates.timeLimit !== undefined && updates.timeLimit !== t.timeLimit)
+          ) {
+            updated.updated_by = currentLogin || 'Аноним';
+            updated.updated_at = now;
+          }
+          return updated;
+        }
+        return t;
+      })
     });
   };
 
@@ -620,7 +650,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     
     setBestiaryEntries(updated);
     setSelectedEntry(bestiaryEditForm);
-    CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
+    CacheManager.set('bestiary_entries', updated, CACHE_TTL);
 
     if (supabase) {
       const payload = {
@@ -643,7 +673,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             console.error('Failed to upsert bestiary_entry in Supabase:', error);
             // Откатываем при ошибке
             setBestiaryEntries(bestiaryEntries);
-            CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
+            CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
           }
         });
     }
@@ -657,7 +687,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (confirm('Удалить запись?')) {
       const updated = bestiaryEntries.filter(e => e.id !== id);
       setBestiaryEntries(updated);
-      CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
+      CacheManager.set('bestiary_entries', updated, CACHE_TTL);
       
       if (selectedEntry?.id === id) {
         setSelectedEntry(null);
@@ -673,7 +703,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
               console.error('Failed to delete bestiary_entry from Supabase:', error);
               // Откатываем при ошибке
               setBestiaryEntries(bestiaryEntries);
-              CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
+              CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
             }
           });
       }
