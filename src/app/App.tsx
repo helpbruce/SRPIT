@@ -718,26 +718,17 @@ export default function App() {
               const docUrl = convertToEmbedUrl(documents[fullscreenIndex].url);
               const type = getDocType(docUrl);
               return type === 'pdf' ? (
-                <div className="relative w-full h-full" style={{ overflow: 'hidden', maxWidth: '90vw', maxHeight: '90vh' }}>
-                  <div style={{
-                    position: 'absolute',
-                    inset: '-25px',
-                    overflow: 'hidden',
-                    pointerEvents: 'none',
-                  }}>
-                    <iframe
-                      src={docUrl}
-                      title={`doc-${fullscreenIndex}`}
-                      style={{
-                        width: 'calc(100% + 50px)',
-                        height: 'calc(100% + 50px)',
-                        border: 'none',
-                        transform: 'scale(1.05)',
-                        transformOrigin: 'top center',
-                      }}
-                      scrolling="no"
-                    />
-                  </div>
+                <div className="relative w-full h-full flex items-center justify-center" style={{ maxWidth: '90vw', maxHeight: '90vh' }}>
+                  <iframe
+                    src={docUrl}
+                    title={`doc-${fullscreenIndex}`}
+                    className="w-full h-full border-0"
+                    style={{
+                      background: 'white',
+                      borderRadius: '4px',
+                    }}
+                    scrolling="auto"
+                  />
                 </div>
               ) : (
                 <img
