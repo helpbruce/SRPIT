@@ -13,10 +13,10 @@ CREATE TABLE IF NOT EXISTS secret_character_entries (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Записи для основной БД
+-- Записи для основной БД (pda_characters.id — text, НЕ uuid!)
 CREATE TABLE IF NOT EXISTS pda_character_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  character_id UUID REFERENCES pda_characters(id) ON DELETE CASCADE,
+  character_id TEXT REFERENCES pda_characters(id) ON DELETE CASCADE,
   author_login TEXT,
   content TEXT,
   entry_type TEXT DEFAULT 'note', -- 'task', 'short_info', 'full_info', 'notes', 'edit'

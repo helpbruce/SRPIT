@@ -141,32 +141,62 @@ export function DatabaseView({
     await supabase.from(entriesTableName).insert(entry);
   };
 
-  // Сохранение персонажа (добавляет записи а не меняет поля)
-  const saveCharacter = () => {
+  // Сохранение персонажа и запись в Supabase
+  const saveCharacter = async () => {
     playSaveSound();
-    if (!editForm || !selectedCharacter) return;
+    if (!editForm) return;
 
-    // Обновляем кэш персонажа
-    const updatedChars = characters.map(c => c.id === editForm.id ? editForm : c);
+    const updatedChars = isCreating
+      ? [...characters, editForm]
+      : characters.map(c => c.id === editForm.id ? editForm : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
 
-    // Добавляем записи для каждого изменённого поля
-    if (editForm.shortInfo !== selectedCharacter.shortInfo) {
-      addEntry(editForm.shortInfo || '—', 'short_info');
-    }
-    if (editForm.fullInfo !== selectedCharacter.fullInfo) {
-      addEntry(editForm.fullInfo || '—', 'full_info');
-    }
-    if (editForm.notes !== selectedCharacter.notes) {
-      addEntry(editForm.notes || '—', 'notes');
-    }
-    // Обновляем статус если изменился
-    if (editForm.status !== selectedCharacter.status) {
-      addEntry(`Статус изменён: ${editForm.status}`, 'edit');
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    const payload = {
+      id: editForm.id,
+      photo: editForm.photo || '',
+      name: editForm.name || '',
+      birth_date: editForm.birthDate || null,
+      faction: editForm.faction || null,
+      rank: editForm.rank || null,
+      status: editForm.status || 'Неизвестен',
+      short_info: editForm.shortInfo || null,
+      full_info: editForm.fullInfo || null,
+      notes: editForm.notes || null,
+      case_number: editForm.caseNumber || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (supabase) {
+      const { error } = await supabase.from(tableName).upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.error(`Failed to upsert ${tableName} in Supabase:`, error);
+        alert('Ошибка сохранения: ' + error.message);
+        setCharacters(characters);
+        CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+        return;
+      }
     }
 
+    if (!isCreating && selectedCharacter) {
+      if (editForm.shortInfo !== selectedCharacter.shortInfo) {
+        addEntry(editForm.shortInfo || '—', 'short_info');
+      }
+      if (editForm.fullInfo !== selectedCharacter.fullInfo) {
+        addEntry(editForm.fullInfo || '—', 'full_info');
+      }
+      if (editForm.notes !== selectedCharacter.notes) {
+        addEntry(editForm.notes || '—', 'notes');
+      }
+      if (editForm.status !== selectedCharacter.status) {
+        addEntry(`Статус изменён: ${editForm.status}`, 'edit');
+      }
+    }
+
+    setSelectedCharacter(editForm);
+    setIsCreating(false);
     setIsEditing(false);
     setEditForm(null);
     setTasksExpanded(false);
