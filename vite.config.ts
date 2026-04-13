@@ -5,18 +5,42 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [
-    // The React and Tailwind plugins are both required for Make, even if
-    // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
   ],
   resolve: {
     alias: {
-      // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
     },
   },
-
-  // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  build: {
+    // Оптимизация разделения чанков для лучшего кэширования
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React и основные библиотеки — отдельный чанк (редко меняется)
+          'vendor-react': ['react', 'react-dom'],
+          // Supabase — отдельный чанк
+          'vendor-supabase': ['@supabase/supabase-js'],
+          // Lucide иконки — отдельный чанк
+          'vendor-icons': ['lucide-react'],
+          // MUI — отдельный чанк (тяжёлый, но редко меняется)
+          'vendor-mui': ['@mui/material', '@mui/icons-material'],
+          // Radix UI — отдельный чанк
+          'vendor-radix': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-dropdown-menu',
+            '@radix-ui/react-popover',
+            '@radix-ui/react-select',
+            '@radix-ui/react-slot',
+            '@radix-ui/react-tabs',
+            '@radix-ui/react-tooltip',
+          ],
+        },
+      },
+    },
+    //_chunk размер для предупреждений (увеличим чтобы не спамило)
+    chunkSizeWarningLimit: 1000,
+  },
 })

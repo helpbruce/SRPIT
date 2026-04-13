@@ -233,7 +233,7 @@ export function DatabaseView({
       : characters.map(c => c.id === editForm.id ? editForm : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
 
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const payload = {
@@ -258,7 +258,7 @@ export function DatabaseView({
         console.error(`Failed to upsert ${tableName} in Supabase:`, error);
         alert('Ошибка сохранения: ' + error.message);
         setCharacters(characters);
-        CacheManager.set(cacheKey, characters, CacheManager.LONG_TTL);
+        CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
         return;
       }
     }
@@ -308,7 +308,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updatedCharacter : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
 
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const { error } = await supabase.from(tableName).update({ tasks: updatedTasks }).eq('id', selectedCharacter.id);
@@ -336,7 +336,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     const payload = {
       id: detailForm.id,
@@ -358,7 +358,7 @@ export function DatabaseView({
       console.error('Failed to save character:', error);
       alert('Ошибка сохранения: ' + error.message);
       setCharacters(characters);
-      CacheManager.set(cacheKey, characters, CacheManager.LONG_TTL);
+      CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
     }
     setDetailEditMode(false);
     setDetailForm(null);
@@ -376,7 +376,7 @@ export function DatabaseView({
       const updated = characters.filter(c => c.id !== selectedCharacter.id);
       setCharacters(updated);
       const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-      CacheManager.set(cacheKey, updated, CacheManager.LONG_TTL);
+      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
       if (supabase) {
         await supabase.from(isSecret ? 'secret_characters' : 'pda_characters').delete().eq('id', selectedCharacter.id);
       }
@@ -393,7 +393,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ fullinfo: fullInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -421,7 +421,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ shortinfo: shortInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -449,7 +449,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ notes: notesText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
     // Log the change with old and new text
@@ -491,7 +491,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
     // Log the task edit
@@ -541,7 +541,7 @@ export function DatabaseView({
     const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
     setCharacters(updatedChars);
     const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CacheManager.LONG_TTL);
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
     // Log the new task
@@ -580,7 +580,7 @@ export function DatabaseView({
                   const updated = characters.filter(c => c.id !== editForm.id);
                   setCharacters(updated);
                   const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-                  CacheManager.set(cacheKey, updated, CacheManager.LONG_TTL);
+                  CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
 
                   if (supabase) {
                     supabase
@@ -591,7 +591,7 @@ export function DatabaseView({
                         if (error) {
                           console.error('Failed to delete character from Supabase:', error);
                           setCharacters(characters);
-                          CacheManager.set(cacheKey, characters, CacheManager.LONG_TTL);
+                          CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
                         }
                       });
                   }
