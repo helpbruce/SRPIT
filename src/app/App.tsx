@@ -11,6 +11,7 @@ import { supabase } from '../shared/lib/supabaseClient';
 import { CacheManager } from '../shared/lib/cache';
 import { debounce } from '../shared/lib/realtimeUtils';
 import { User } from '@supabase/supabase-js';
+import { verifyDiscordMembership, isDiscordConfigured } from '../features/pda/discordAuth';
 
 interface Document {
   url: string;
@@ -54,6 +55,36 @@ export default function App() {
       return false;
     }
   });
+  // Discord verification gate
+  const [discordChecking, setDiscordChecking] = useState(true);
+  const [discordVerified, setDiscordVerified] = useState(false);
+  const [discordError, setDiscordError] = useState(false);
+
+  // Auto-verify Discord on site load (before site auth)
+  useEffect(() => {
+    if (!isDiscordConfigured()) {
+      setDiscordChecking(false);
+      setDiscordVerified(true);
+      return;
+    }
+    // Проверяем, уже верифицирован ли пользователь
+    if (localStorage.getItem('srpit_discord_verified') === 'true') {
+      setDiscordChecking(false);
+      setDiscordVerified(true);
+      return;
+    }
+    // Авто-верификация через Discord OAuth
+    verifyDiscordMembership().then((result) => {
+      setDiscordChecking(false);
+      if (result.success) {
+        setDiscordVerified(true);
+        try { localStorage.setItem('srpit_discord_verified', 'true'); } catch {}
+      } else {
+        setDiscordError(true);
+      }
+    });
+  }, []);
+
   const [siteLoginValue, setSiteLoginValue] = useState('');
   const [sitePasswordValue, setSitePasswordValue] = useState('');
   const [siteAuthError, setSiteAuthError] = useState('');
@@ -347,6 +378,47 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [fullscreenIndex]);
+
+  // Discord gate — before everything
+  if (isDiscordConfigured() && discordChecking) {
+    return (
+      <div className="fixed inset-0 bg-[#050505] text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-gray-300 font-mono text-sm mb-4">Проверка Discord...</div>
+          <div className="w-10 h-10 border-2 border-gray-500 border-t-gray-300 rounded-full animate-spin mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDiscordConfigured() && discordError) {
+    return (
+      <div className="fixed inset-0 bg-[#050505] text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-3xl border-2 border-red-800 bg-[#111111] p-8 text-center shadow-2xl">
+          <div className="text-red-400 font-mono text-lg mb-2">ДОСТУП ЗАПРЕЩЁН</div>
+          <div className="text-gray-500 font-mono text-xs mb-6">Вы не состоите в требуемом Discord сервере</div>
+          <button
+            onClick={() => {
+              setDiscordError(false);
+              setDiscordChecking(true);
+              verifyDiscordMembership().then((result) => {
+                setDiscordChecking(false);
+                if (result.success) {
+                  setDiscordVerified(true);
+                  try { localStorage.setItem('srpit_discord_verified', 'true'); } catch {}
+                } else {
+                  setDiscordError(true);
+                }
+              });
+            }}
+            className="px-6 py-3 bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl text-gray-400 font-mono text-sm hover:bg-[#3a3a3a]"
+          >
+            ПОПРОБОВАТЬ СНОВА
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!siteAuthorized) {
     return (
