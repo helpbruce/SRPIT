@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Component, ReactNode } from 'react';
 import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
-import { checkDiscordMembership } from './discordAuth';
+import { checkDiscordMembership, isDiscordVerificationRequired } from './discordAuth';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
@@ -90,6 +90,12 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [discordChecking, setDiscordChecking] = useState(false);
   const [discordVerified, setDiscordVerified] = useState<boolean | null>(null);
   const [discordId, setDiscordId] = useState('');
+  const [discordRequired, setDiscordRequired] = useState(false);
+
+  // Check if Discord verification is required on mount
+  useEffect(() => {
+    isDiscordVerificationRequired().then(setDiscordRequired);
+  }, []);
 
   const [newSectionName, setNewSectionName] = useState('');
   const [showNewSectionModal, setShowNewSectionModal] = useState(false);
@@ -803,8 +809,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
     }
 
     // Проверяем Discord membership если сервер настроен
-    const discordServerId = import.meta.env.VITE_DISCORD_SERVER_ID || import.meta.env.DISCORD_SERVER_ID;
-    if (discordServerId && !discordVerified) {
+    if (discordRequired && !discordVerified) {
       if (!discordId.trim()) {
         alert('Для входа требуется указать Discord ID');
         return;
@@ -934,7 +939,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
             </div>
             <div className="space-y-2">
-            {(import.meta.env.VITE_DISCORD_SERVER_ID || import.meta.env.DISCORD_SERVER_ID) && authMode === 'login' && !discordVerified && (
+            {discordRequired && authMode === 'login' && !discordVerified && (
               <input
                 type="text"
                 placeholder="Discord ID (для проверки)"

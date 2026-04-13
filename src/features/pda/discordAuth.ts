@@ -18,7 +18,7 @@ export function getDiscordUserId(): Promise<DiscordUser | null> {
       return;
     }
 
-    const redirectUri = window.location.origin + '/discord-callback';
+    const redirectUri = window.location.origin + '/discord-callback.html';
     const scope = 'identify guilds';
     const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}`;
 
@@ -60,6 +60,26 @@ export function getDiscordUserId(): Promise<DiscordUser | null> {
   });
 }
 
+// Проверка: требуется ли Discord верификация (через API endpoint)
+let _discordRequired: boolean | null = null;
+
+export async function isDiscordVerificationRequired(): Promise<boolean> {
+  if (_discordRequired !== null) return _discordRequired;
+  
+  try {
+    // Делаем HEAD запрос к API — если Discord настроен, ответ будет 200 или 500
+    // Если не настроен — 500 с ошибкой "credentials not configured"
+    const response = await fetch('/api/discord-verify', { method: 'HEAD' });
+    // Если API существует (не 404) и возвращает ошибку "not configured" (500) — Discord не настроен
+    // Если возвращает 200 или 405 — Discord настроен
+    _discordRequired = response.status === 200 || response.status === 405;
+  } catch {
+    _discordRequired = false;
+  }
+  
+  return _discordRequired;
+}
+
 // Проверка членства пользователя в Discord сервере
 export async function checkDiscordMembership(userId: string): Promise<{ isMember: boolean; user?: any }> {
   try {
@@ -70,7 +90,8 @@ export async function checkDiscordMembership(userId: string): Promise<{ isMember
     });
 
     if (!response.ok) {
-      console.error('Discord verification failed:', response.status);
+      const errorText = await response.text().catch(() => '');
+      console.error('Discord verification failed:', response.status, errorText);
       return { isMember: false };
     }
 

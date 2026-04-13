@@ -9,7 +9,7 @@ const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || '';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -17,8 +17,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // HEAD запрос — проверка, настроен ли Discord
+  if (req.method === 'HEAD') {
+    if (DISCORD_SERVER_ID && DISCORD_BOT_TOKEN) {
+      return res.status(200).end();
+    }
+    return res.status(503).end();
+  }
+
   if (!DISCORD_SERVER_ID || !DISCORD_BOT_TOKEN) {
-    return res.status(500).json({ error: 'Discord credentials not configured' });
+    return res.status(503).json({ error: 'Discord credentials not configured' });
   }
 
   // Проверка членства пользователя в сервере через Discord API
