@@ -256,12 +256,13 @@ export function DocumentStack({
               const embedUrl = convertToEmbedUrl(page.url);
               const type = getDocType(embedUrl);
               return type === 'pdf' ? (
-                <div className="w-full h-full flex items-center justify-center" style={{ background: 'white' }}>
+                <div className="w-full h-full" style={{ background: 'white', overflow: 'hidden' }}>
                   <img
                     src="/icons/zaglushka.PNG"
                     alt="Документ"
-                    className="w-full h-full object-contain pointer-events-none"
+                    className="w-full h-full pointer-events-none"
                     draggable={false}
+                    style={{ objectFit: 'cover' }}
                   />
                 </div>
               ) : (

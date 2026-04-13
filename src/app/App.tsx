@@ -192,6 +192,8 @@ export default function App() {
     if (!supabase) return;
 
     const preloadData = async () => {
+      console.log('[Preload] Начинаем загрузку данных в кэш...');
+      const startTime = Date.now();
       try {
         // Загружаем USB файлы
         const { data: usbData, error: usbError } = await supabase
@@ -214,6 +216,9 @@ export default function App() {
             });
           }
           CacheManager.set('usb_files', usbFiles, CACHE_TTL);
+          console.log('[Preload] ✓ USB файлы загружены в кэш:', usbFiles.photo.length + usbFiles.video.length + usbFiles.audio.length, 'файлов');
+        } else {
+          console.warn('[Preload] ✗ Ошибка загрузки USB:', usbError);
         }
 
         // Загружаем персонажей PDA
@@ -234,10 +239,13 @@ export default function App() {
             shortInfo: row.shortinfo ?? '',
             fullInfo: row.fullinfo ?? '',
             notes: row.notes ?? '',
-            tasks: (row.tasks ?? []) as any[],
+            tasks: (row.tasks ?? []) as Task[],
             caseNumber: row.casenumber ?? '',
           }));
           CacheManager.set('pda_characters', characters, CACHE_TTL);
+          console.log('[Preload] ✓ Персонажи загружены в кэш:', characters.length);
+        } else {
+          console.warn('[Preload] ✗ Ошибка загрузки персонажей:', charsError);
         }
 
         // Загружаем бестиарий
@@ -258,11 +266,15 @@ export default function App() {
             anomalyNames: row.anomaly_names ?? [],
           }));
           CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
+          console.log('[Preload] ✓ Бестиарий загружен в кэш:', bestiaryEntries.length);
+        } else {
+          console.warn('[Preload] ✗ Ошибка загрузки бестиария:', bestiaryError);
         }
 
-        console.log('✓ Данные предзагружены в кэш');
+        const elapsed = Date.now() - startTime;
+        console.log(`[Preload] ✓ Завершено за ${elapsed}мс`);
       } catch (e) {
-        console.warn('Ошибка предзагрузки данных:', e);
+        console.warn('[Preload] ✗ Ошибка предзагрузки данных:', e);
       }
     };
 

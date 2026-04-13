@@ -144,54 +144,74 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
     }
 
     let isMounted = true;
-    let isLoading = false;
 
-    const loadUsbFiles = async () => {
-      if (isLoading) return;
-      isLoading = true;
-      try {
-        const { data, error } = await supabase
-          .from('usb_files')
-          .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
-          .order('created_at', { ascending: true });
-
-        if (error) {
-          console.error('Failed to load usb_files from Supabase:', error);
-          return;
-        }
-
-        if (!isMounted || !data) return;
-
-        const next: USBFiles = { photo: [], video: [], audio: [] };
-        for (const row of data) {
-          const type = row.type as 'photo' | 'video' | 'audio';
-          next[type].push({
-            id: row.id as string,
-            url: row.url as string,
-            name: row.name as string,
-            createdAt: (row.created_at_label as string) ?? '',
-            is_protected: (row.is_protected as boolean) ?? false,
-            password_hash: (row.password_hash as string) ?? null,
-            protected_hint: (row.protected_hint as string) ?? null,
-          });
-        }
-
-        setUsbFiles(next);
-        CacheManager.set('usb_files', next, CACHE_TTL);
-      } finally {
-        isLoading = false;
-      }
-    };
-
-    // Начальная загрузка — сначала кеш, потом Supabase
+    // СРАЗУ загружаем из кэша
     const cached = CacheManager.get<USBFiles>('usb_files');
+    console.log('[USB] Кэш при монтировании:', cached ? 'есть' : 'нет');
     if (cached && isMounted) {
+      console.log('[USB] Загружено из кэша:', cached.photo.length + cached.video.length + cached.audio.length, 'файлов');
       setUsbFiles(cached);
     }
-    loadUsbFiles();
 
-    // Realtime с debounce — 500ms
-    const debouncedLoad = debounce(loadUsbFiles, 500);
+    // Загружаем из Supabase ТОЛЬКО если кэш пустой
+    if (!cached) {
+      console.log('[USB] Кэш пустой, загружаем из Supabase...');
+      supabase
+        .from('usb_files')
+        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+        .order('created_at', { ascending: true })
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('[USB] Ошибка загрузки:', error);
+            return;
+          }
+          if (!isMounted || !data) return;
+
+          const next: USBFiles = { photo: [], video: [], audio: [] };
+          for (const row of data) {
+            const type = row.type as 'photo' | 'video' | 'audio';
+            next[type].push({
+              id: row.id as string,
+              url: row.url as string,
+              name: row.name as string,
+              createdAt: (row.created_at_label as string) ?? '',
+              is_protected: (row.is_protected as boolean) ?? false,
+              password_hash: (row.password_hash as string) ?? null,
+              protected_hint: (row.protected_hint as string) ?? null,
+            });
+          }
+          setUsbFiles(next);
+          CacheManager.set('usb_files', next, CACHE_TTL);
+          console.log('[USB] Загружено из Supabase:', next.photo.length + next.video.length + next.audio.length, 'файлов');
+        });
+    }
+
+    // Realtime — обновляет данные ТОЛЬКО при изменениях в БД
+    const debouncedLoad = debounce(() => {
+      console.log('[USB] Realtime сработал...');
+      supabase
+        .from('usb_files')
+        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+        .order('created_at', { ascending: true })
+        .then(({ data, error }) => {
+          if (error || !isMounted || !data) return;
+          const next: USBFiles = { photo: [], video: [], audio: [] };
+          for (const row of data) {
+            const type = row.type as 'photo' | 'video' | 'audio';
+            next[type].push({
+              id: row.id as string,
+              url: row.url as string,
+              name: row.name as string,
+              createdAt: (row.created_at_label as string) ?? '',
+              is_protected: (row.is_protected as boolean) ?? false,
+              password_hash: (row.password_hash as string) ?? null,
+              protected_hint: (row.protected_hint as string) ?? null,
+            });
+          }
+          setUsbFiles(next);
+          CacheManager.set('usb_files', next, CACHE_TTL);
+        });
+    }, 500);
     const channel = supabase
       .channel('usb_realtime')
       .on(
