@@ -6,7 +6,11 @@
       "Bash(\"c:\\program files\\git\\cmd\\git.exe\" *)",
       "Bash(findstr *)",
       "Bash(more *)",
-      "Bash(del *)"
+      "Bash(del *)",
+      "Bash(npm run *)",
+      "Bash(cmd *)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   },
   "$version": 3

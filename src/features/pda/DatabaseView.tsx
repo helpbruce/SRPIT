@@ -83,13 +83,14 @@ const getStatusDotColor = (status: string) => {
 
 // Формат даты: [12.04.2009 | 15:30 (UTC+3:00) | user1]
 const formatEntryDate = (isoDate: string | null) => {
-  if (!isoDate) return '[— | — (UTC+3:00) | —]';
+  if (!isoDate) return '— | — (UTC+3:00)';
   const d = new Date(isoDate);
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear());
   const hours = String(d.getHours()).padStart(2, '0');
   const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `[${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | `;
+  return `${day}.${month}.${year} | ${hours}:${minutes} (UTC+3:00)`;
 };
 
 export function DatabaseView({
@@ -102,8 +103,9 @@ export function DatabaseView({
   photo1InputRef, getTaskPlaceholder, addTask, updateTask, deleteTask,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
-  const [viewTasksExpanded, setViewTasksExpanded] = useState(false);
-  const [viewFullInfoExpanded, setViewFullInfoExpanded] = useState(false);
+  const [detailSection, setDetailSection] = useState<'entries' | 'full_info' | 'tasks' | 'short_info' | 'notes'>('entries');
+  const [taskInput, setTaskInput] = useState({ description: '', reward: '', timeLimit: '' });
+  const [currentTimestamp, setCurrentTimestamp] = useState('');
   const [entries, setEntries] = useState<CharacterEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [fieldEditMode, setFieldEditMode] = useState({
@@ -112,6 +114,8 @@ export function DatabaseView({
     rank: false,
     birthDate: false,
   });
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskModalForm, setTaskModalForm] = useState({ description: '', reward: '', timeLimit: '' });
 
   const isEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
     isCreating || fieldEditMode[field];
@@ -151,6 +155,21 @@ export function DatabaseView({
         setLoadingEntries(false);
       });
   }, [selectedCharacter?.id, entriesTableName, supabase]);
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = String(now.getFullYear());
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      setCurrentTimestamp(`${day}.${month}.${year} ${hours}:${minutes}`);
+    };
+    updateTime();
+    const interval = window.setInterval(updateTime, 30000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Добавить новую запись
   const addEntry = async (content: string, type: CharacterEntry['entry_type'], isUpdate = false) => {
@@ -192,6 +211,7 @@ export function DatabaseView({
       shortinfo: editForm.shortInfo || null,
       fullinfo: editForm.fullInfo || null,
       notes: editForm.notes || null,
+      tasks: editForm.tasks || [],
       casenumber: editForm.caseNumber || null,
       updated_at: new Date().toISOString(),
     };
@@ -229,6 +249,66 @@ export function DatabaseView({
     setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
     setTasksExpanded(false);
     setEditTasksExpanded(false);
+  };
+
+  const saveNewTask = async () => {
+    if (!supabase || !selectedCharacter) return;
+    if (!taskInput.description.trim()) {
+      alert('Опиши задачу перед сохранением');
+      return;
+    }
+
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      description: taskInput.description.trim(),
+      status: 'в работе',
+      reward: taskInput.reward.trim(),
+      timeLimit: taskInput.timeLimit.trim(),
+    };
+    const updatedTasks = [...(selectedCharacter.tasks || []), newTask];
+    const updatedCharacter = { ...selectedCharacter, tasks: updatedTasks };
+
+    setSelectedCharacter(updatedCharacter);
+    const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updatedCharacter : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    const { error } = await supabase.from(tableName).update({ tasks: updatedTasks }).eq('id', selectedCharacter.id);
+    if (error) {
+      console.error(`Failed to update ${tableName} tasks:`, error);
+    }
+
+    addEntry(`Задача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`, 'task');
+    setTaskInput({ description: '', reward: '', timeLimit: '' });
+    setDetailSection('entries');
+  };
+
+  // Сохранение задачи из глобального модального окна (toolbar)
+  const saveGlobalTask = async () => {
+    if (!supabase) return;
+    if (!taskModalForm.description.trim()) {
+      alert('Опиши задачу перед сохранением');
+      return;
+    }
+
+    const taskContent = `Задача: ${taskModalForm.description.trim()}${taskModalForm.timeLimit.trim() ? ` | Время: ${taskModalForm.timeLimit.trim()}` : ''}${taskModalForm.reward.trim() ? ` | Награда: ${taskModalForm.reward.trim()}` : ''}`;
+
+    const entry: CharacterEntry = {
+      id: crypto.randomUUID(),
+      character_id: 'global',
+      author_login: currentLogin || 'Аноним',
+      content: taskContent,
+      entry_type: 'task',
+      is_update: false,
+      created_at: new Date().toISOString(),
+    };
+    setEntries(prev => [...prev, entry]);
+
+    await supabase.from(entriesTableName).insert(entry);
+    setTaskModalForm({ description: '', reward: '', timeLimit: '' });
+    setShowTaskModal(false);
   };
 
   // ===== EDIT MODE =====
@@ -278,7 +358,7 @@ export function DatabaseView({
         </div>
 
         <div className="flex-1 overflow-y-auto pda-scrollbar p-4">
-          <div className="flex gap-4">
+          <div className="mx-auto w-full max-w-[900px] flex gap-4">
             {/* Left - Photo */}
             <div className="flex-shrink-0">
               <div className="mb-3">
@@ -401,20 +481,23 @@ export function DatabaseView({
   if (selectedCharacter) {
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
-        <div className={`p-3 border-b ${borderColor} flex-shrink-0 flex items-center justify-between`}>
-          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+        <div className={`p-3 border-b ${borderColor} flex-shrink-0 relative flex items-center justify-between`}>
+          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
+          <div className="absolute inset-x-0 text-center pointer-events-none">
+            <div className={`${textMuted} font-mono text-[10px]`}>{currentTimestamp || '––.––.–––– ––:––'}</div>
+          </div>
           <div className="flex gap-2">
             <button
-              onClick={() => { playAllSound(); setViewTasksExpanded(true); }}
-              className={`px-3 py-1.5 ${isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+              onClick={() => { playAllSound(); setDetailSection('tasks'); }}
+              className={`px-3 py-1.5 ${detailSection === 'tasks' ? 'bg-yellow-700/40 border-yellow-600 text-yellow-200' : isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
             >
               <CheckSquare className="w-4 h-4" /> ЗАДАЧИ
             </button>
             <button
-              onClick={() => { playAllSound(); setViewFullInfoExpanded(true); }}
-              className={`px-3 py-1.5 ${isSecret ? 'bg-blue-900/30 border-blue-800 text-blue-400' : 'bg-blue-700/30 border-blue-600 text-blue-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+              onClick={() => { playAllSound(); setDetailSection('full_info'); }}
+              className={`px-3 py-1.5 ${detailSection === 'full_info' ? 'bg-blue-700/40 border-blue-600 text-blue-200' : isSecret ? 'bg-blue-900/30 border-blue-800 text-blue-400' : 'bg-blue-700/30 border-blue-600 text-blue-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
             >
               <FileText className="w-4 h-4" /> ПОЛНАЯ ИНФО
             </button>
@@ -452,39 +535,163 @@ export function DatabaseView({
             </div>
           </div>
 
-          {/* Message feed */}
-          <div className="p-4 space-y-3">
-            <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-              <MessageSquare className="w-3 h-3" /> ЗАПИСИ
+          <div className={`p-4 border-b ${borderColor}`}>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: 'entries' as const, label: 'Записи', icon: <MessageSquare className="w-3 h-3" /> },
+                { key: 'full_info' as const, label: 'Полная информация', icon: <FileText className="w-3 h-3" /> },
+                { key: 'tasks' as const, label: 'Задачи', icon: <CheckSquare className="w-3 h-3" /> },
+                { key: 'short_info' as const, label: 'Краткая информация', icon: <List className="w-3 h-3" /> },
+                { key: 'notes' as const, label: 'Заметки', icon: <Edit3 className="w-3 h-3" /> },
+              ].sort((a, b) => {
+                const order = ['entries', 'full_info', 'tasks', 'short_info', 'notes'];
+                return order.indexOf(a.key) - order.indexOf(b.key);
+              }).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => { playAllSound(); setDetailSection(tab.key); }}
+                  className={`px-3 py-1.5 border rounded font-mono text-[10px] flex items-center gap-2 ${detailSection === tab.key ? 'bg-[#2a2a2a] border-[#5c5c5c] text-gray-100' : 'bg-[#0a0a0a] border-[#2a2a2a] text-gray-400 hover:bg-[#111111]'}`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {loadingEntries ? (
-              <div className={`${textMuted} font-mono text-xs`}>Загрузка записей...</div>
-            ) : entries.length === 0 ? (
-              <div className={`${textMuted} font-mono text-xs`}>Записей пока нет.</div>
-            ) : (
-              entries.map(entry => {
-                return (
-                  <div key={entry.id} className="group relative">
-                    {/* Hover: full metadata */}
-                    <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                      <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
-                        {formatEntryDate(entry.created_at)}{entry.author_login}]{entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
-                      </span>
+          <div className="p-4 space-y-4">
+            {detailSection === 'entries' && (
+              <div className="space-y-3">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <MessageSquare className="w-3 h-3" /> ЗАПИСИ
+                </div>
+                {loadingEntries ? (
+                  <div className={`${textMuted} font-mono text-xs`}>Загрузка записей...</div>
+                ) : entries.length === 0 ? (
+                  <div className={`${textMuted} font-mono text-xs`}>Записей пока нет.</div>
+                ) : (
+                  entries.map(entry => (
+                    <div key={entry.id} className="group relative">
+                      <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
+                          [{formatEntryDate(entry.created_at)} | {entry.author_login}]
+                          {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
+                        </span>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${
+                        entry.entry_type === 'task'
+                          ? isSecret ? 'bg-yellow-600/10 border-yellow-600/30' : 'bg-yellow-500/10 border-yellow-500/30'
+                          : entry.entry_type === 'edit'
+                          ? isSecret ? 'bg-blue-600/10 border-blue-600/30' : 'bg-blue-500/10 border-blue-500/30'
+                          : isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'
+                      }`}>
+                        <div className={`${textColor} font-mono text-xs whitespace-pre-wrap break-words`}>{entry.content}</div>
+                      </div>
                     </div>
-                    {/* Message bubble */}
-                    <div className={`p-3 rounded-lg border ${
-                      entry.entry_type === 'task'
-                        ? isSecret ? 'bg-yellow-600/10 border-yellow-600/30' : 'bg-yellow-500/10 border-yellow-500/30'
-                        : entry.entry_type === 'edit'
-                        ? isSecret ? 'bg-blue-600/10 border-blue-600/30' : 'bg-blue-500/10 border-blue-500/30'
-                        : isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'
-                    }`}>
-                      <div className={`${textColor} font-mono text-xs whitespace-pre-wrap break-words`}>{entry.content}</div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {detailSection === 'full_info' && (
+              <div className="space-y-3">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <FileText className="w-3 h-3" /> ПОЛНАЯ ИНФО
+                </div>
+                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[300px] whitespace-pre-wrap`}>
+                  {selectedCharacter.fullInfo || 'Полная информация отсутствует'}
+                </div>
+              </div>
+            )}
+
+            {detailSection === 'tasks' && (
+              <div className="space-y-4">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <CheckSquare className="w-3 h-3" /> НОВАЯ ЗАДАЧА
+                </div>
+                <div className={`space-y-4 p-4 border rounded ${inputBg}`}>
+                  <div>
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАЧА</label>
+                    <textarea
+                      value={taskInput.description}
+                      onChange={(e) => setTaskInput({ ...taskInput, description: e.target.value })}
+                      placeholder="Описание задачи..."
+                      className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`}
+                      rows={3}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                      <input
+                        type="text"
+                        value={taskInput.timeLimit}
+                        onChange={(e) => setTaskInput({ ...taskInput, timeLimit: e.target.value })}
+                        placeholder="Срок выполнения"
+                        className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                      />
+                    </div>
+                    <div>
+                      <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
+                      <input
+                        type="text"
+                        value={taskInput.reward}
+                        onChange={(e) => setTaskInput({ ...taskInput, reward: e.target.value })}
+                        placeholder="Награда"
+                        className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                      />
                     </div>
                   </div>
-                );
-              })
+                  <button
+                    onClick={saveNewTask}
+                    className={`px-4 py-2 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-green-700/30 border-green-600 text-green-200'} border rounded font-mono text-xs hover:opacity-90 transition-all`}
+                  >
+                    СОХРАНИТЬ
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                    <List className="w-3 h-3" /> ТЕКУЩИЕ ЗАДАЧИ
+                  </div>
+                  {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
+                    selectedCharacter.tasks.map(task => (
+                      <div key={task.id} className={`p-3 rounded-lg border ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
+                        <div className="mb-2 font-mono text-[11px] text-gray-400">{task.status}</div>
+                        <div className="font-mono text-xs text-gray-200 whitespace-pre-wrap">{task.description}</div>
+                        <div className="mt-2 text-[10px] font-mono text-gray-500">
+                          {task.timeLimit ? `Срок: ${task.timeLimit}` : 'Срок не указан'}
+                          {task.reward ? ` • Награда: ${task.reward}` : ''}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className={`${textMuted} font-mono text-xs`}>Задач нет.</div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {detailSection === 'short_info' && (
+              <div className="space-y-3">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <List className="w-3 h-3" /> КРАТКАЯ ИНФО
+                </div>
+                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
+                  {selectedCharacter.shortInfo || 'Краткая информация отсутствует'}
+                </div>
+              </div>
+            )}
+
+            {detailSection === 'notes' && (
+              <div className="space-y-3">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <Edit3 className="w-3 h-3" /> ЗАМЕТКИ
+                </div>
+                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
+                  {selectedCharacter.notes || 'Заметки отсутствуют'}
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -496,7 +703,10 @@ export function DatabaseView({
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
       {/* Toolbar */}
-      <div className={`p-3 border-b ${borderColor} flex items-center gap-2 flex-shrink-0`}>
+      <div className={`p-3 border-b ${borderColor} flex items-center gap-2 flex-shrink-0 relative`}>
+        <div className="absolute inset-x-0 text-center pointer-events-none">
+          <div className={`${textMuted} font-mono text-[10px]`}>{currentTimestamp || '––.––.–––– ––:––'}</div>
+        </div>
         <Search className={`w-4 h-4 ${isSecret ? 'text-red-700' : 'text-gray-600'}`} />
         <input
           type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
@@ -506,7 +716,7 @@ export function DatabaseView({
         {/* АБД/БД toggle — только если есть доступ */}
         {canAccessAbd && (
           <button
-            onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
+            onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); }}
             className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
           >
             {isSecret ? 'АБД' : 'БД'}
@@ -518,6 +728,16 @@ export function DatabaseView({
           className={`p-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded hover:opacity-80`}
         >
           {viewMode === 'cards' ? <List className="w-3.5 h-3.5" /> : <Grid3X3 className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          onClick={() => {
+            playAllSound();
+            setShowTaskModal(true);
+            setTaskModalForm({ description: '', reward: '', timeLimit: '' });
+          }}
+          className={`px-2 py-1 ${isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+        >
+          <CheckSquare className="w-3 h-3" /> ЗАДАЧИ
         </button>
         <button
           onClick={() => {
@@ -554,7 +774,7 @@ export function DatabaseView({
               <div
                 key={char.id}
                 className={`p-3 border cursor-pointer transition-all rounded flex flex-col gap-2 relative ${char.status === 'В розыске' ? cardWanted : cardBg}`}
-                onClick={() => { playAllSound(); setSelectedCharacter(char); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
+                onClick={() => { playAllSound(); setSelectedCharacter(char); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); }}
               >
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 relative">
@@ -600,7 +820,7 @@ export function DatabaseView({
               <div
                 key={char.id}
                 className={`p-2.5 border cursor-pointer transition-all rounded flex items-center gap-3 ${char.status === 'В розыске' ? cardWanted : cardBg}`}
-                onClick={() => { playAllSound(); setSelectedCharacter(char); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
+                onClick={() => { playAllSound(); setSelectedCharacter(char); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); }}
               >
                 <div className="flex-1 min-w-0">
                   <div className={`${textLight} font-mono text-sm font-bold truncate`}>
@@ -729,107 +949,69 @@ export function DatabaseView({
         </div>
       )}
 
-      {/* View Tasks Modal */}
-      {viewTasksExpanded && selectedCharacter && (
-        <div className="fixed inset-0 z-[100030] flex items-center justify-center pointer-events-auto">
-          <div className="w-[min(90vw,600px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-4 max-h-[80vh] overflow-hidden flex flex-col">
+      {/* Глобальное модальное окно задач (из toolbar) */}
+      {showTaskModal && (
+        <div className="fixed inset-0 z-[100040] flex items-center justify-center pointer-events-auto">
+          <div className="w-[min(90vw,480px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-5 max-h-[85vh] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className={`${textLight} font-mono text-sm font-bold`}>ЗАДАЧИ - {selectedCharacter.name}</h3>
+              <h3 className={`${textLight} font-mono text-sm font-bold flex items-center gap-2`}>
+                <CheckSquare className="w-4 h-4" /> НОВАЯ ЗАДАЧА
+              </h3>
               <button
-                onClick={() => setViewTasksExpanded(false)}
+                onClick={() => { playAllSound(); setShowTaskModal(false); }}
                 className="text-gray-500 hover:text-gray-400"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pda-scrollbar space-y-3">
-              {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
-                selectedCharacter.tasks.map((task, index) => (
-                  <div key={task.id} className={`p-4 border rounded ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
-                    <div className="space-y-3">
-                      <div>
-                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАНИЕ</label>
-                        <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[60px]`}>
-                          {task.description || 'Описание отсутствует'}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
-                          <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
-                            {task.reward || 'Не указана'}
-                          </div>
-                        </div>
-                        <div>
-                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
-                          <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
-                            {task.timeLimit || 'Не указано'}
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
-                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded border font-mono text-xs ${
-                          task.status === 'в работе' ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' :
-                          task.status === 'провалено' ? 'bg-red-500/20 border-red-500 text-red-400' :
-                          'bg-green-500/20 border-green-500 text-green-400'
-                        }`}>
-                          <div className={`w-2 h-2 rounded-full ${
-                            task.status === 'в работе' ? 'bg-yellow-500' :
-                            task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'
-                          }`}></div>
-                          {task.status}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className={`${textMuted} font-mono text-xs text-center py-8`}>
-                  Задач нет
+            <div className="flex-1 overflow-y-auto pda-scrollbar space-y-4">
+              <div>
+                <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>ЗАДАЧА</label>
+                <textarea
+                  value={taskModalForm.description}
+                  onChange={(e) => setTaskModalForm({ ...taskModalForm, description: e.target.value })}
+                  placeholder="Описание задачи..."
+                  className={`w-full p-3 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-40`}
+                  rows={4}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                  <input
+                    type="text"
+                    value={taskModalForm.timeLimit}
+                    onChange={(e) => setTaskModalForm({ ...taskModalForm, timeLimit: e.target.value })}
+                    placeholder="Срок выполнения"
+                    className={`w-full p-2.5 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-40`}
+                  />
                 </div>
-              )}
-            </div>
-
-            <div className="flex gap-2 mt-4 flex-shrink-0">
-              <button
-                onClick={() => setViewTasksExpanded(false)}
-                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
-              >
-                ЗАКРЫТЬ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Full Info Modal */}
-      {viewFullInfoExpanded && selectedCharacter && (
-        <div className="fixed inset-0 z-[100030] flex items-center justify-center pointer-events-auto">
-          <div className="w-[min(90vw,600px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-4 max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className={`${textLight} font-mono text-sm font-bold`}>ПОЛНАЯ ИНФОРМАЦИЯ - {selectedCharacter.name}</h3>
-              <button
-                onClick={() => setViewFullInfoExpanded(false)}
-                className="text-gray-500 hover:text-gray-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto pda-scrollbar">
-              <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[300px] whitespace-pre-wrap`}>
-                {selectedCharacter.fullInfo || 'Полная информация отсутствует'}
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>НАГРАДА</label>
+                  <input
+                    type="text"
+                    value={taskModalForm.reward}
+                    onChange={(e) => setTaskModalForm({ ...taskModalForm, reward: e.target.value })}
+                    placeholder="Награда"
+                    className={`w-full p-2.5 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-40`}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-2 mt-4 flex-shrink-0">
+            <div className="flex gap-3 mt-4 flex-shrink-0">
               <button
-                onClick={() => setViewFullInfoExpanded(false)}
-                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
+                onClick={saveGlobalTask}
+                className={`flex-1 px-4 py-2.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-green-700/30 border-green-600 text-green-200'} border rounded font-mono text-xs hover:opacity-90 transition-all flex items-center justify-center gap-2`}
               >
-                ЗАКРЫТЬ
+                <Save className="w-4 h-4" /> СОХРАНИТЬ
+              </button>
+              <button
+                onClick={() => { playAllSound(); setShowTaskModal(false); }}
+                className={`px-4 py-2.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}
+              >
+                ОТМЕНА
               </button>
             </div>
           </div>

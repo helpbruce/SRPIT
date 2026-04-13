@@ -146,6 +146,24 @@ const shortInfoTemplate =
 const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
 
 
+  const [currentTimestamp, setCurrentTimestamp] = useState('');
+
+  // Обновление времени
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = String(now.getFullYear());
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      setCurrentTimestamp(`${day}.${month}.${year} ${hours}:${minutes}`);
+    };
+    updateTime();
+    const interval = window.setInterval(updateTime, 30000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const playAllSound = () => {
     if (isMuted) return;
     if (allSoundRef.current) {
@@ -939,14 +957,17 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       <div className="w-full h-full bg-transparent flex items-center justify-center relative pointer-events-none">
         <div className="w-[85%] h-[85%] bg-[#0a0a0a] border border-[#2a2a2a] overflow-hidden flex flex-col pointer-events-auto rounded-sm">
           {/* Header */}
-          <div className="bg-gradient-to-b from-[#2a2a2a] to-[#1a1a1a] h-10 px-4 flex items-center justify-between border-b border-[#3a3a3a] flex-shrink-0">
+          <div className="bg-gradient-to-b from-[#2a2a2a] to-[#1a1a1a] h-10 px-4 flex items-center justify-between border-b border-[#3a3a3a] flex-shrink-0 relative">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-gray-400 animate-pulse"></div>
               <span className="text-gray-400 text-xs font-mono tracking-wider">
                 {pdaMode === 'menu' ? 'ГЛАВНОЕ МЕНЮ' : pdaMode === 'database' ? 'БАЗА ДАННЫХ' : pdaMode === 'bestiary' ? 'БЕСТИАРИЙ' : 'ШИФРАТОР'}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="absolute inset-x-0 text-center pointer-events-none">
+              <span className="text-gray-500 text-xs font-mono">{currentTimestamp || '––.––.–––– ––:––'}</span>
+            </div>
+            <div className="flex items-center gap-2 relative z-10">
               {pdaMode === 'menu' && (
                 <button
                   className="px-2 py-1 bg-[#2a2a2a] border border-[#3a3a3a] rounded hover:bg-[#3a3a3a] transition-all text-gray-400 font-mono text-[10px] flex items-center gap-1"
