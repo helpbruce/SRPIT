@@ -965,7 +965,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               </span>
             </div>
             <div className="absolute inset-x-0 text-center pointer-events-none">
-              <span className="text-gray-500 text-xs font-mono">{currentTimestamp || '––.––.–––– ––:––'}</span>
+              <span className="text-gray-500 text-xs font-mono tracking-wider">{currentTimestamp ? `2009 // ${currentTimestamp.split(' ')[0]} ${currentTimestamp.split(' ')[1]}` : '2009 // --.-- --:--'}</span>
             </div>
             <div className="flex items-center gap-2 relative z-10">
               {pdaMode === 'menu' && (

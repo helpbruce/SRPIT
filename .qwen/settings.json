@@ -10,7 +10,11 @@
       "Bash(npm run *)",
       "Bash(cmd *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(powershell *)",
+      "Bash(python *)",
+      "Bash(ren *)"
     ]
   },
   "$version": 3

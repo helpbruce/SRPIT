@@ -114,8 +114,20 @@ export function DatabaseView({
     rank: false,
     birthDate: false,
   });
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [taskModalForm, setTaskModalForm] = useState({ description: '', reward: '', timeLimit: '' });
+  // Inline edit state for detail view
+  const [detailEditMode, setDetailEditMode] = useState(false);
+  const [detailForm, setDetailForm] = useState<Character | null>(null);
+  // Task edit state
+  const [editingTask, setEditingTask] = useState<{id: string; description: string; status: string; reward: string; timeLimit: string} | null>(null);
+  // Full info edit state
+  const [editingFullInfo, setEditingFullInfo] = useState(false);
+  const [fullInfoText, setFullInfoText] = useState('');
+  // Short info edit state
+  const [editingShortInfo, setEditingShortInfo] = useState(false);
+  const [shortInfoText, setShortInfoText] = useState('');
+  // Notes edit state
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
 
   const isEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
     isCreating || fieldEditMode[field];
@@ -285,33 +297,138 @@ export function DatabaseView({
     setDetailSection('entries');
   };
 
-  // Сохранение задачи из глобального модального окна (toolbar)
-  const saveGlobalTask = async () => {
-    if (!supabase) return;
-    if (!taskModalForm.description.trim()) {
-      alert('Опиши задачу перед сохранением');
-      return;
-    }
-
-    const taskContent = `Задача: ${taskModalForm.description.trim()}${taskModalForm.timeLimit.trim() ? ` | Время: ${taskModalForm.timeLimit.trim()}` : ''}${taskModalForm.reward.trim() ? ` | Награда: ${taskModalForm.reward.trim()}` : ''}`;
-
-    const entry: CharacterEntry = {
-      id: crypto.randomUUID(),
-      character_id: 'global',
-      author_login: currentLogin || 'Аноним',
-      content: taskContent,
-      entry_type: 'task',
-      is_update: false,
-      created_at: new Date().toISOString(),
-    };
-    setEntries(prev => [...prev, entry]);
-
-    await supabase.from(entriesTableName).insert(entry);
-    setTaskModalForm({ description: '', reward: '', timeLimit: '' });
-    setShowTaskModal(false);
+  // ===== INLINE EDIT FUNCTIONS FOR DETAIL VIEW =====
+  const startDetailEdit = () => {
+    playAllSound();
+    setDetailForm({ ...selectedCharacter! });
+    setDetailEditMode(true);
   };
 
-  // ===== EDIT MODE =====
+  const saveDetailEdit = async () => {
+    playSaveSound();
+    if (!detailForm) return;
+    const updated = { ...selectedCharacter!, ...detailForm };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    const payload = {
+      id: detailForm.id,
+      photo: detailForm.photo || '',
+      name: detailForm.name || '',
+      birthdate: detailForm.birthDate || null,
+      faction: detailForm.faction || null,
+      rank: detailForm.rank || null,
+      status: detailForm.status || 'Неизвестен',
+      shortinfo: detailForm.shortInfo || null,
+      fullinfo: detailForm.fullInfo || null,
+      notes: detailForm.notes || null,
+      tasks: detailForm.tasks || [],
+      casenumber: detailForm.caseNumber || null,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from(tableName).upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.error('Failed to save character:', error);
+      alert('Ошибка сохранения: ' + error.message);
+      setCharacters(characters);
+      CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+    }
+    setDetailEditMode(false);
+    setDetailForm(null);
+  };
+
+  const cancelDetailEdit = () => {
+    playAllSound();
+    setDetailEditMode(false);
+    setDetailForm(null);
+  };
+
+  const deleteSelectedCharacter = async () => {
+    playAllSound();
+    if (confirm('Удалить персонажа?')) {
+      const updated = characters.filter(c => c.id !== selectedCharacter.id);
+      setCharacters(updated);
+      const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+      CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+      if (supabase) {
+        await supabase.from(isSecret ? 'secret_characters' : 'pda_characters').delete().eq('id', selectedCharacter.id);
+      }
+      setSelectedCharacter(null);
+      setEntries([]);
+    }
+  };
+
+  const saveFullInfo = async () => {
+    playSaveSound();
+    const updated = { ...selectedCharacter!, fullInfo: fullInfoText };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    await supabase.from(tableName).update({ fullinfo: fullInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    setEditingFullInfo(false);
+  };
+
+  const saveShortInfo = async () => {
+    playSaveSound();
+    const updated = { ...selectedCharacter!, shortInfo: shortInfoText };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    await supabase.from(tableName).update({ shortinfo: shortInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    setEditingShortInfo(false);
+  };
+
+  const saveNotesEdit = async () => {
+    playSaveSound();
+    const updated = { ...selectedCharacter!, notes: notesText };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    await supabase.from(tableName).update({ notes: notesText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    setEditingNotes(false);
+  };
+
+  const startTaskEdit = (task: Task) => {
+    playAllSound();
+    setEditingTask({
+      id: task.id,
+      description: task.description,
+      status: task.status,
+      reward: task.reward || '',
+      timeLimit: task.timeLimit || '',
+    });
+  };
+
+  const saveTaskEdit = async () => {
+    playSaveSound();
+    if (!editingTask || !selectedCharacter) return;
+    const updatedTasks = selectedCharacter.tasks.map(t =>
+      t.id === editingTask.id ? { ...t, description: editingTask.description, status: editingTask.status as Task['status'], reward: editingTask.reward, timeLimit: editingTask.timeLimit } : t
+    );
+    const updated = { ...selectedCharacter, tasks: updatedTasks };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    setEditingTask(null);
+  };
+
+  // ===== DETAIL VIEW (лента сообщений) =====
   if (isEditing && editForm) {
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
@@ -479,62 +596,105 @@ export function DatabaseView({
 
   // ===== DETAIL VIEW (лента сообщений) =====
   if (selectedCharacter) {
+    const cur = detailEditMode && detailForm ? detailForm : selectedCharacter;
+
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
-        <div className={`p-3 border-b ${borderColor} flex-shrink-0 relative flex items-center justify-between`}>
-          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+        {/* Header */}
+        <div className={`p-3 border-b ${borderColor} flex-shrink-0 flex items-center justify-between`}>
+          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); setDetailSection('entries'); setTaskInput({ description: '', reward: '', timeLimit: '' }); setDetailEditMode(false); setDetailForm(null); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
-          <div className="absolute inset-x-0 text-center pointer-events-none">
-            <div className={`${textMuted} font-mono text-[10px]`}>{currentTimestamp || '––.––.–––– ––:––'}</div>
-          </div>
           <div className="flex gap-2">
             <button
-              onClick={() => { playAllSound(); setDetailSection('tasks'); }}
-              className={`px-3 py-1.5 ${detailSection === 'tasks' ? 'bg-yellow-700/40 border-yellow-600 text-yellow-200' : isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+              onClick={deleteSelectedCharacter}
+              className={`px-3 py-1.5 bg-red-900/30 border-red-800 text-red-400 border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
             >
-              <CheckSquare className="w-4 h-4" /> ЗАДАЧИ
+              <Trash2 className="w-4 h-4" /> УДАЛИТЬ
             </button>
-            <button
-              onClick={() => { playAllSound(); setDetailSection('full_info'); }}
-              className={`px-3 py-1.5 ${detailSection === 'full_info' ? 'bg-blue-700/40 border-blue-600 text-blue-200' : isSecret ? 'bg-blue-900/30 border-blue-800 text-blue-400' : 'bg-blue-700/30 border-blue-600 text-blue-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
-            >
-              <FileText className="w-4 h-4" /> ПОЛНАЯ ИНФО
-            </button>
-            <button onClick={() => {
-              playAllSound();
-              setIsCreating(false);
-              setIsEditing(true);
-              setEditForm(selectedCharacter);
-              setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
-            }} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
-              <Edit2 className="w-4 h-4" /> РЕДАКТИРОВАТЬ
-            </button>
+            {detailEditMode ? (
+              <>
+                <button onClick={cancelDetailEdit} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
+                <button onClick={saveDetailEdit} className={`px-3 py-1.5 bg-green-900/30 border-green-800 text-green-400 border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><Save className="w-4 h-4" /> СОХРАНИТЬ</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => { playAllSound(); setDetailSection('tasks'); }} className={`px-3 py-1.5 ${detailSection === 'tasks' ? 'bg-yellow-700/40 border-yellow-600 text-yellow-200' : isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><CheckSquare className="w-4 h-4" /> ЗАДАЧИ</button>
+                <button onClick={startDetailEdit} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><Edit2 className="w-4 h-4" /> ИЗМЕНИТЬ</button>
+              </>
+            )}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto pda-scrollbar">
-          {/* Header */}
+          {/* Character Header */}
           <div className={`p-4 border-b ${borderColor}`}>
             <div className="flex gap-4">
               <div className="flex-shrink-0">
-                <img src={selectedCharacter.photo} className="w-24 h-32 object-cover rounded border border-[#2a2a2a]" alt="" />
+                <img src={cur.photo} className="w-24 h-32 object-cover rounded border border-[#2a2a2a]" alt="" />
                 <div className="mt-2 flex items-center justify-center gap-1">
-                  <div className={`w-2 h-2 rounded-full ${getStatusDotColor(selectedCharacter.status)} animate-pulse`}></div>
-                  <span className={`${textMuted} font-mono text-[10px]`}>{selectedCharacter.status}</span>
+                  <div className={`w-2 h-2 rounded-full ${getStatusDotColor(cur.status)} animate-pulse`}></div>
+                  <span className={`${textMuted} font-mono text-[10px]`}>{cur.status}</span>
                 </div>
               </div>
-              <div>
-                <h2 className={`${textLight} font-mono text-lg font-bold`}>{selectedCharacter.name || 'Без имени'}</h2>
-                <div className={`${textMuted} font-mono text-xs mt-1`}>{selectedCharacter.faction} • {selectedCharacter.rank}</div>
-                {selectedCharacter.birthDate && <div className={`${textMuted} font-mono text-xs mt-1`}>
-                  <Calendar className="w-3 h-3 inline mr-1" />{selectedCharacter.birthDate}
-                </div>}
-                {selectedCharacter.caseNumber && <div className={`${textMuted} font-mono text-xs mt-1`}>Дело: {selectedCharacter.caseNumber}</div>}
+              <div className="flex-1 space-y-2">
+                <div>
+                  <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>ИМЯ</label>
+                  {detailEditMode ? (
+                    <input type="text" value={cur.name} onChange={(e) => setDetailForm({...cur, name: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                  ) : (
+                    <h2 className={`${textLight} font-mono text-lg font-bold`}>{cur.name || 'Без имени'}</h2>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>ФРАКЦИЯ</label>
+                    {detailEditMode ? (
+                      <input type="text" value={cur.faction} onChange={(e) => setDetailForm({...cur, faction: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                    ) : (
+                      <div className={`${textMuted} font-mono text-xs`}>{cur.faction || '—'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>РАНГ</label>
+                    {detailEditMode ? (
+                      <input type="text" value={cur.rank} onChange={(e) => setDetailForm({...cur, rank: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                    ) : (
+                      <div className={`${textMuted} font-mono text-xs`}>{cur.rank || '—'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>ДАТА РОЖДЕНИЯ</label>
+                    {detailEditMode ? (
+                      <input type="text" value={cur.birthDate} onChange={(e) => setDetailForm({...cur, birthDate: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                    ) : (
+                      <div className={`${textMuted} font-mono text-xs`}>{cur.birthDate ? `${cur.birthDate}` : '—'}</div>
+                    )}
+                  </div>
+                  <div>
+                    <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>ДЕЛО</label>
+                    {detailEditMode ? (
+                      <input type="text" value={cur.caseNumber} onChange={(e) => setDetailForm({...cur, caseNumber: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                    ) : (
+                      <div className={`${textMuted} font-mono text-xs`}>{cur.caseNumber || '—'}</div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className={`block ${textMuted} text-[9px] font-mono mb-0.5`}>СТАТУС</label>
+                  {detailEditMode ? (
+                    <select value={cur.status} onChange={(e) => setDetailForm({...cur, status: e.target.value})} className={`w-full p-1.5 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`}>
+                      <option value="Активен">Активен</option><option value="Пропал">Пропал</option><option value="Мертв">Мертв</option><option value="В розыске">В розыске</option><option value="Неизвестен">Неизвестен</option>
+                    </select>
+                  ) : (
+                    <div className={`${textMuted} font-mono text-xs`}>{cur.status}</div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* Tabs */}
           <div className={`p-4 border-b ${borderColor}`}>
             <div className="flex flex-wrap gap-2">
               {[
@@ -543,10 +703,7 @@ export function DatabaseView({
                 { key: 'tasks' as const, label: 'Задачи', icon: <CheckSquare className="w-3 h-3" /> },
                 { key: 'short_info' as const, label: 'Краткая информация', icon: <List className="w-3 h-3" /> },
                 { key: 'notes' as const, label: 'Заметки', icon: <Edit3 className="w-3 h-3" /> },
-              ].sort((a, b) => {
-                const order = ['entries', 'full_info', 'tasks', 'short_info', 'notes'];
-                return order.indexOf(a.key) - order.indexOf(b.key);
-              }).map(tab => (
+              ].map(tab => (
                 <button
                   key={tab.key}
                   onClick={() => { playAllSound(); setDetailSection(tab.key); }}
@@ -560,6 +717,7 @@ export function DatabaseView({
           </div>
 
           <div className="p-4 space-y-4">
+            {/* Записи */}
             {detailSection === 'entries' && (
               <div className="space-y-3">
                 <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
@@ -593,108 +751,165 @@ export function DatabaseView({
               </div>
             )}
 
+            {/* Полная информация — редактируемая */}
             {detailSection === 'full_info' && (
               <div className="space-y-3">
-                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                  <FileText className="w-3 h-3" /> ПОЛНАЯ ИНФО
-                </div>
-                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[300px] whitespace-pre-wrap`}>
-                  {selectedCharacter.fullInfo || 'Полная информация отсутствует'}
-                </div>
-              </div>
-            )}
-
-            {detailSection === 'tasks' && (
-              <div className="space-y-4">
-                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                  <CheckSquare className="w-3 h-3" /> НОВАЯ ЗАДАЧА
-                </div>
-                <div className={`space-y-4 p-4 border rounded ${inputBg}`}>
-                  <div>
-                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАЧА</label>
-                    <textarea
-                      value={taskInput.description}
-                      onChange={(e) => setTaskInput({ ...taskInput, description: e.target.value })}
-                      placeholder="Описание задачи..."
-                      className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`}
-                      rows={3}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
-                      <input
-                        type="text"
-                        value={taskInput.timeLimit}
-                        onChange={(e) => setTaskInput({ ...taskInput, timeLimit: e.target.value })}
-                        placeholder="Срок выполнения"
-                        className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
-                      />
-                    </div>
-                    <div>
-                      <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
-                      <input
-                        type="text"
-                        value={taskInput.reward}
-                        onChange={(e) => setTaskInput({ ...taskInput, reward: e.target.value })}
-                        placeholder="Награда"
-                        className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
-                      />
-                    </div>
-                  </div>
-                  <button
-                    onClick={saveNewTask}
-                    className={`px-4 py-2 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-green-700/30 border-green-600 text-green-200'} border rounded font-mono text-xs hover:opacity-90 transition-all`}
-                  >
-                    СОХРАНИТЬ
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                    <List className="w-3 h-3" /> ТЕКУЩИЕ ЗАДАЧИ
-                  </div>
-                  {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
-                    selectedCharacter.tasks.map(task => (
-                      <div key={task.id} className={`p-3 rounded-lg border ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
-                        <div className="mb-2 font-mono text-[11px] text-gray-400">{task.status}</div>
-                        <div className="font-mono text-xs text-gray-200 whitespace-pre-wrap">{task.description}</div>
-                        <div className="mt-2 text-[10px] font-mono text-gray-500">
-                          {task.timeLimit ? `Срок: ${task.timeLimit}` : 'Срок не указан'}
-                          {task.reward ? ` • Награда: ${task.reward}` : ''}
-                        </div>
-                      </div>
-                    ))
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center justify-between`}>
+                  <div className="flex items-center gap-2"><FileText className="w-3 h-3" /> ПОЛНАЯ ИНФО</div>
+                  {editingFullInfo ? (
+                    <button onClick={saveFullInfo} className={`px-2 py-0.5 bg-green-900/30 border-green-800 text-green-400 border rounded font-mono text-[10px] flex items-center gap-1`}><Save className="w-3 h-3" /> СОХРАНИТЬ</button>
                   ) : (
-                    <div className={`${textMuted} font-mono text-xs`}>Задач нет.</div>
+                    <button onClick={() => { playAllSound(); setFullInfoText(selectedCharacter.fullInfo || ''); setEditingFullInfo(true); }} className={`px-2 py-0.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-[10px] flex items-center gap-1`}><Edit2 className="w-3 h-3" /> ИЗМЕНИТЬ</button>
                   )}
                 </div>
+                {editingFullInfo ? (
+                  <textarea
+                    value={fullInfoText}
+                    onChange={(e) => setFullInfoText(e.target.value)}
+                    className={`w-full p-3 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none focus:outline-none`}
+                    rows={12}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[300px] whitespace-pre-wrap`}>
+                    {selectedCharacter.fullInfo || 'Полная информация отсутствует'}
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Задачи — только список, hover показывает подсказку, dblclick редактирует */}
+            {detailSection === 'tasks' && (
+              <div className="space-y-3">
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
+                  <CheckSquare className="w-3 h-3" /> ВЫДАННЫЕ ЗАДАЧИ
+                </div>
+                {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
+                  selectedCharacter.tasks.map(task => (
+                    <div
+                      key={task.id}
+                      onDoubleClick={() => startTaskEdit(task)}
+                      className={`group relative p-3 rounded-lg border cursor-pointer transition-all ${
+                        isSecret ? 'bg-red-950/20 border-red-900/30 hover:bg-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
+                      }`}
+                    >
+                      <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                        <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
+                          Двойной клик — редактировать
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={`w-2 h-2 rounded-full ${task.status === 'в работе' ? 'bg-yellow-500' : task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                        <span className={`font-mono text-[10px] ${task.status === 'в работе' ? 'text-yellow-400' : task.status === 'провалено' ? 'text-red-400' : 'text-green-400'}`}>{task.status.toUpperCase()}</span>
+                      </div>
+                      <div className="font-mono text-xs text-gray-200 whitespace-pre-wrap">{task.description}</div>
+                      <div className="mt-1 text-[10px] font-mono text-gray-500">
+                        {task.timeLimit ? `Срок: ${task.timeLimit}` : 'Срок не указан'}
+                        {task.reward ? ` • Награда: ${task.reward}` : ''}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className={`${textMuted} font-mono text-xs`}>Задач нет.</div>
+                )}
+              </div>
+            )}
+
+            {/* Краткая информация — редактируемая */}
             {detailSection === 'short_info' && (
               <div className="space-y-3">
-                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                  <List className="w-3 h-3" /> КРАТКАЯ ИНФО
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center justify-between`}>
+                  <div className="flex items-center gap-2"><List className="w-3 h-3" /> КРАТКАЯ ИНФО</div>
+                  {editingShortInfo ? (
+                    <button onClick={saveShortInfo} className={`px-2 py-0.5 bg-green-900/30 border-green-800 text-green-400 border rounded font-mono text-[10px] flex items-center gap-1`}><Save className="w-3 h-3" /> СОХРАНИТЬ</button>
+                  ) : (
+                    <button onClick={() => { playAllSound(); setShortInfoText(selectedCharacter.shortInfo || ''); setEditingShortInfo(true); }} className={`px-2 py-0.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-[10px] flex items-center gap-1`}><Edit2 className="w-3 h-3" /> ИЗМЕНИТЬ</button>
+                  )}
                 </div>
-                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
-                  {selectedCharacter.shortInfo || 'Краткая информация отсутствует'}
-                </div>
+                {editingShortInfo ? (
+                  <textarea
+                    value={shortInfoText}
+                    onChange={(e) => setShortInfoText(e.target.value)}
+                    className={`w-full p-3 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none focus:outline-none`}
+                    rows={6}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
+                    {selectedCharacter.shortInfo || 'Краткая информация отсутствует'}
+                  </div>
+                )}
               </div>
             )}
 
+            {/* Заметки — редактируемые */}
             {detailSection === 'notes' && (
               <div className="space-y-3">
-                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                  <Edit3 className="w-3 h-3" /> ЗАМЕТКИ
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center justify-between`}>
+                  <div className="flex items-center gap-2"><Edit3 className="w-3 h-3" /> ЗАМЕТКИ</div>
+                  {editingNotes ? (
+                    <button onClick={saveNotesEdit} className={`px-2 py-0.5 bg-green-900/30 border-green-800 text-green-400 border rounded font-mono text-[10px] flex items-center gap-1`}><Save className="w-3 h-3" /> СОХРАНИТЬ</button>
+                  ) : (
+                    <button onClick={() => { playAllSound(); setNotesText(selectedCharacter.notes || ''); setEditingNotes(true); }} className={`px-2 py-0.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-[10px] flex items-center gap-1`}><Edit2 className="w-3 h-3" /> ИЗМЕНИТЬ</button>
+                  )}
                 </div>
-                <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
-                  {selectedCharacter.notes || 'Заметки отсутствуют'}
-                </div>
+                {editingNotes ? (
+                  <textarea
+                    value={notesText}
+                    onChange={(e) => setNotesText(e.target.value)}
+                    className={`w-full p-3 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none focus:outline-none`}
+                    rows={6}
+                    autoFocus
+                  />
+                ) : (
+                  <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[180px] whitespace-pre-wrap`}>
+                    {selectedCharacter.notes || 'Заметки отсутствуют'}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        {/* Task Edit Modal */}
+        {editingTask && (
+          <div className="fixed inset-0 z-[100050] flex items-center justify-center pointer-events-auto">
+            <div className="w-[min(90vw,500px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-5 max-h-[80vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                <h3 className={`${textLight} font-mono text-sm font-bold`}>РЕДАКТИРОВАНИЕ ЗАДАЧИ</h3>
+                <button onClick={() => { playAllSound(); setEditingTask(null); }} className="text-gray-500 hover:text-gray-400"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto pda-scrollbar space-y-3">
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАЧА</label>
+                  <textarea value={editingTask.description} onChange={(e) => setEditingTask({...editingTask, description: e.target.value})} className={`w-full p-2.5 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none focus:outline-none`} rows={3} autoFocus />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                    <input type="text" value={editingTask.timeLimit} onChange={(e) => setEditingTask({...editingTask, timeLimit: e.target.value})} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                  </div>
+                  <div>
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
+                    <input type="text" value={editingTask.reward} onChange={(e) => setEditingTask({...editingTask, reward: e.target.value})} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`} />
+                  </div>
+                </div>
+                <div>
+                  <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
+                  <select value={editingTask.status} onChange={(e) => setEditingTask({...editingTask, status: e.target.value})} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} focus:outline-none`}>
+                    <option value="в работе">В работе</option>
+                    <option value="выполнено">Выполнено</option>
+                    <option value="провалено">Провалено</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4 flex-shrink-0">
+                <button onClick={saveTaskEdit} className={`flex-1 px-4 py-2.5 bg-green-900/30 border-green-800 text-green-300 border rounded font-mono text-xs flex items-center justify-center gap-2`}><Save className="w-4 h-4" /> СОХРАНИТЬ</button>
+                <button onClick={() => { playAllSound(); setEditingTask(null); }} className={`px-4 py-2.5 bg-red-900/30 border-red-800 text-red-400 border rounded font-mono text-xs`}>ОТМЕНА</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -703,10 +918,7 @@ export function DatabaseView({
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
       {/* Toolbar */}
-      <div className={`p-3 border-b ${borderColor} flex items-center gap-2 flex-shrink-0 relative`}>
-        <div className="absolute inset-x-0 text-center pointer-events-none">
-          <div className={`${textMuted} font-mono text-[10px]`}>{currentTimestamp || '––.––.–––– ––:––'}</div>
-        </div>
+      <div className={`p-3 border-b ${borderColor} flex items-center gap-2 flex-shrink-0`}>
         <Search className={`w-4 h-4 ${isSecret ? 'text-red-700' : 'text-gray-600'}`} />
         <input
           type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
@@ -728,16 +940,6 @@ export function DatabaseView({
           className={`p-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded hover:opacity-80`}
         >
           {viewMode === 'cards' ? <List className="w-3.5 h-3.5" /> : <Grid3X3 className="w-3.5 h-3.5" />}
-        </button>
-        <button
-          onClick={() => {
-            playAllSound();
-            setShowTaskModal(true);
-            setTaskModalForm({ description: '', reward: '', timeLimit: '' });
-          }}
-          className={`px-2 py-1 ${isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
-        >
-          <CheckSquare className="w-3 h-3" /> ЗАДАЧИ
         </button>
         <button
           onClick={() => {
@@ -943,75 +1145,6 @@ export function DatabaseView({
                 className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
               >
                 ЗАКРЫТЬ
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Глобальное модальное окно задач (из toolbar) */}
-      {showTaskModal && (
-        <div className="fixed inset-0 z-[100040] flex items-center justify-center pointer-events-auto">
-          <div className="w-[min(90vw,480px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-5 max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
-              <h3 className={`${textLight} font-mono text-sm font-bold flex items-center gap-2`}>
-                <CheckSquare className="w-4 h-4" /> НОВАЯ ЗАДАЧА
-              </h3>
-              <button
-                onClick={() => { playAllSound(); setShowTaskModal(false); }}
-                className="text-gray-500 hover:text-gray-400"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto pda-scrollbar space-y-4">
-              <div>
-                <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>ЗАДАЧА</label>
-                <textarea
-                  value={taskModalForm.description}
-                  onChange={(e) => setTaskModalForm({ ...taskModalForm, description: e.target.value })}
-                  placeholder="Описание задачи..."
-                  className={`w-full p-3 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-40`}
-                  rows={4}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
-                  <input
-                    type="text"
-                    value={taskModalForm.timeLimit}
-                    onChange={(e) => setTaskModalForm({ ...taskModalForm, timeLimit: e.target.value })}
-                    placeholder="Срок выполнения"
-                    className={`w-full p-2.5 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-40`}
-                  />
-                </div>
-                <div>
-                  <label className={`block ${textMuted} text-[10px] font-mono mb-1.5`}>НАГРАДА</label>
-                  <input
-                    type="text"
-                    value={taskModalForm.reward}
-                    onChange={(e) => setTaskModalForm({ ...taskModalForm, reward: e.target.value })}
-                    placeholder="Награда"
-                    className={`w-full p-2.5 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-40`}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-4 flex-shrink-0">
-              <button
-                onClick={saveGlobalTask}
-                className={`flex-1 px-4 py-2.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-green-700/30 border-green-600 text-green-200'} border rounded font-mono text-xs hover:opacity-90 transition-all flex items-center justify-center gap-2`}
-              >
-                <Save className="w-4 h-4" /> СОХРАНИТЬ
-              </button>
-              <button
-                onClick={() => { playAllSound(); setShowTaskModal(false); }}
-                className={`px-4 py-2.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}
-              >
-                ОТМЕНА
               </button>
             </div>
           </div>
