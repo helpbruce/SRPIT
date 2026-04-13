@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS secret_character_entries (
   content TEXT,
   entry_type TEXT DEFAULT 'note', -- 'task', 'short_info', 'full_info', 'notes', 'edit'
   is_update BOOLEAN DEFAULT false,
+  target_section TEXT, -- 'full_info', 'tasks', 'short_info', 'notes'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -21,8 +22,39 @@ CREATE TABLE IF NOT EXISTS pda_character_entries (
   content TEXT,
   entry_type TEXT DEFAULT 'note', -- 'task', 'short_info', 'full_info', 'notes', 'edit'
   is_update BOOLEAN DEFAULT false,
+  target_section TEXT, -- 'full_info', 'tasks', 'short_info', 'notes'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Если таблицы уже существуют, добавляем колонку target_section
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'secret_character_entries' AND column_name = 'target_section'
+  ) THEN
+    -- Колонка уже существует, ничего не делаем
+    NULL;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'secret_character_entries'
+  ) THEN
+    ALTER TABLE secret_character_entries ADD COLUMN target_section TEXT;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'pda_character_entries' AND column_name = 'target_section'
+  ) THEN
+    -- Колонка уже существует, ничего не делаем
+    NULL;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'pda_character_entries'
+  ) THEN
+    ALTER TABLE pda_character_entries ADD COLUMN target_section TEXT;
+  END IF;
+END $$;
 
 ALTER TABLE secret_character_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pda_character_entries ENABLE ROW LEVEL SECURITY;

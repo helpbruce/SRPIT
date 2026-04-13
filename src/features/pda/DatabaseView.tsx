@@ -34,6 +34,7 @@ interface CharacterEntry {
   entry_type: 'task' | 'short_info' | 'full_info' | 'notes' | 'edit';
   is_update: boolean;
   created_at: string;
+  target_section?: 'full_info' | 'tasks' | 'short_info' | 'notes';
 }
 
 interface DatabaseViewProps {
@@ -150,6 +151,14 @@ export function DatabaseView({
   const cardWanted = isSecret ? 'bg-red-900/30 border-red-700 hover:bg-red-800/40' : 'bg-red-900/20 border-red-700 hover:bg-red-900/30';
 
   const entriesTableName = isSecret ? 'secret_character_entries' : 'pda_character_entries';
+
+  // Обработчик клика на запись — переход к разделу
+  const handleEntryClick = (entry: CharacterEntry) => {
+    if (entry.target_section) {
+      playAllSound();
+      setDetailSection(entry.target_section);
+    }
+  };
 
   // Загрузка записей для персонажа
   useEffect(() => {
@@ -363,6 +372,7 @@ export function DatabaseView({
 
   const saveFullInfo = async () => {
     playSaveSound();
+    const oldText = selectedCharacter!.fullInfo || '';
     const updated = { ...selectedCharacter!, fullInfo: fullInfoText };
     setSelectedCharacter(updated);
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
@@ -371,16 +381,17 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ fullinfo: fullInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
-    // Log the change
-    if (fullInfoText !== selectedCharacter!.fullInfo && supabase) {
+    // Log the change with old and new text
+    if (fullInfoText !== oldText && supabase) {
       const logEntry: CharacterEntry = {
         id: crypto.randomUUID(),
         character_id: selectedCharacter!.id,
         author_login: currentLogin || 'Аноним',
-        content: `[ПОЛНАЯ ИНФО ИЗМЕНЕНА]`,
+        content: `[ПОЛНАЯ ИНФО ИЗМЕНЕНА]\n\nБЫЛО:\n${oldText || '(пусто)'}\n\nСТАЛО:\n${fullInfoText || '(пусто)'}`,
         entry_type: 'full_info',
         is_update: true,
         created_at: new Date().toISOString(),
+        target_section: 'full_info',
       };
       await supabase.from(entriesTableName).insert(logEntry);
     }
@@ -389,6 +400,7 @@ export function DatabaseView({
 
   const saveShortInfo = async () => {
     playSaveSound();
+    const oldText = selectedCharacter!.shortInfo || '';
     const updated = { ...selectedCharacter!, shortInfo: shortInfoText };
     setSelectedCharacter(updated);
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
@@ -397,16 +409,17 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ shortinfo: shortInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
-    // Log the change
-    if (shortInfoText !== selectedCharacter!.shortInfo && supabase) {
+    // Log the change with old and new text
+    if (shortInfoText !== oldText && supabase) {
       const logEntry: CharacterEntry = {
         id: crypto.randomUUID(),
         character_id: selectedCharacter!.id,
         author_login: currentLogin || 'Аноним',
-        content: `[КРАТКАЯ ИНФО ИЗМЕНЕНА]`,
+        content: `[КРАТКАЯ ИНФО ИЗМЕНЕНА]\n\nБЫЛО:\n${oldText || '(пусто)'}\n\nСТАЛО:\n${shortInfoText || '(пусто)'}`,
         entry_type: 'short_info',
         is_update: true,
         created_at: new Date().toISOString(),
+        target_section: 'short_info',
       };
       await supabase.from(entriesTableName).insert(logEntry);
     }
@@ -415,6 +428,7 @@ export function DatabaseView({
 
   const saveNotesEdit = async () => {
     playSaveSound();
+    const oldText = selectedCharacter!.notes || '';
     const updated = { ...selectedCharacter!, notes: notesText };
     setSelectedCharacter(updated);
     const updatedChars = characters.map(c => c.id === selectedCharacter!.id ? updated : c);
@@ -423,16 +437,17 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ notes: notesText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
-    // Log the change
-    if (notesText !== selectedCharacter!.notes && supabase) {
+    // Log the change with old and new text
+    if (notesText !== oldText && supabase) {
       const logEntry: CharacterEntry = {
         id: crypto.randomUUID(),
         character_id: selectedCharacter!.id,
         author_login: currentLogin || 'Аноним',
-        content: `[ЗАМЕТКИ ИЗМЕНЕНЫ]`,
+        content: `[ЗАМЕТКИ ИЗМЕНЕНЫ]\n\nБЫЛО:\n${oldText || '(пусто)'}\n\nСТАЛО:\n${notesText || '(пусто)'}`,
         entry_type: 'notes',
         is_update: true,
         created_at: new Date().toISOString(),
+        target_section: 'notes',
       };
       await supabase.from(entriesTableName).insert(logEntry);
     }
@@ -830,20 +845,25 @@ export function DatabaseView({
                   <div className={`${textMuted} font-mono text-xs`}>Записей пока нет.</div>
                 ) : (
                   entries.map(entry => (
-                    <div key={entry.id} className="group relative">
+                    <div
+                      key={entry.id}
+                      className={`group relative ${entry.target_section ? 'cursor-pointer' : ''}`}
+                      onClick={() => handleEntryClick(entry)}
+                    >
                       <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                         <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
                           [{formatEntryDate(entry.created_at)} | {entry.author_login}]
                           {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
+                          {entry.target_section && <span className={`${isSecret ? 'text-green-600' : 'text-green-500'}`}> [ПЕРЕХОД]</span>}
                         </span>
                       </div>
-                      <div className={`p-3 rounded-lg border ${
+                      <div className={`p-3 rounded-lg border transition-all ${
                         entry.entry_type === 'task'
-                          ? isSecret ? 'bg-yellow-600/10 border-yellow-600/30' : 'bg-yellow-500/10 border-yellow-500/30'
+                          ? isSecret ? 'bg-yellow-600/10 border-yellow-600/30 hover:border-yellow-500/50' : 'bg-yellow-500/10 border-yellow-500/30 hover:border-yellow-400/50'
                           : entry.entry_type === 'edit'
-                          ? isSecret ? 'bg-blue-600/10 border-blue-600/30' : 'bg-blue-500/10 border-blue-500/30'
-                          : isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'
-                      }`}>
+                          ? isSecret ? 'bg-blue-600/10 border-blue-600/30 hover:border-blue-500/50' : 'bg-blue-500/10 border-blue-500/30 hover:border-blue-400/50'
+                          : isSecret ? 'bg-red-950/30 border-red-900/30 hover:border-red-700/50' : 'bg-[#0a0a0a] border-[#2a2a2a] hover:border-[#4a4a4a]'
+                      } ${entry.target_section ? 'hover:shadow-md' : ''}`}>
                         <div className={`${textColor} font-mono text-xs whitespace-pre-wrap break-words`}>{entry.content}</div>
                       </div>
                     </div>

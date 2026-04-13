@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS pda_character_entries (
   content TEXT,
   entry_type TEXT DEFAULT 'note', -- 'task', 'short_info', 'full_info', 'notes', 'edit'
   is_update BOOLEAN DEFAULT false,
+  target_section TEXT, -- 'full_info', 'tasks', 'short_info', 'notes'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS secret_character_entries (
   content TEXT,
   entry_type TEXT DEFAULT 'note', -- 'task', 'short_info', 'full_info', 'notes', 'edit'
   is_update BOOLEAN DEFAULT false,
+  target_section TEXT, -- 'full_info', 'tasks', 'short_info', 'notes'
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
