@@ -19,7 +19,7 @@ const CACHE_TTL = 24 * 60 * 60 * 1000;
 // Определяем тип документа по URL
 function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
   const lower = url.toLowerCase();
-  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com/file/d/')) {
+  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com') || lower.includes('docs.google.com')) {
     return 'pdf';
   }
   if (lower.match(/\.(mp4|webm|mov|avi|mkv)$/i) || lower.startsWith('data:video')) {
@@ -29,6 +29,21 @@ function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
     return 'audio';
   }
   return 'image';
+}
+
+// Конвертируем URL в embed-формат для iframe
+function convertToEmbedUrl(url: string): string {
+  // Google Docs
+  const docsMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+  if (docsMatch) {
+    return `https://docs.google.com/document/d/${docsMatch[1]}/preview`;
+  }
+  // Google Drive
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) {
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+  }
+  return url;
 }
 
 interface Document {
@@ -288,8 +303,9 @@ export default function App() {
 
   const handleConfirmAdd = (url: string, name?: string) => {
     if (addContext === 'folder') {
+      const embedUrl = convertToEmbedUrl(url);
       const optimisticId = `doc-${Date.now()}-${Math.random()}`;
-      const newDoc = { url, id: optimisticId };
+      const newDoc = { url: embedUrl, id: optimisticId };
       const updated = [...documents, newDoc];
       setDocuments(updated);
 
@@ -698,22 +714,26 @@ export default function App() {
           )}
 
           <div className="w-full h-full p-8 flex flex-col items-center justify-center">
-            {getDocType(documents[fullscreenIndex].url) === 'pdf' ? (
-              <iframe
-                src={documents[fullscreenIndex].url}
-                className="w-full h-full border-0"
-                title={`doc-${fullscreenIndex}`}
-                style={{ background: 'white', maxWidth: '90vw', maxHeight: '90vh' }}
-              />
-            ) : (
-              <img
-                src={documents[fullscreenIndex].url}
-                className="max-w-full max-h-full object-contain pointer-events-none"
-                alt=""
-                loading="eager"
-                decoding="async"
-              />
-            )}
+            {(() => {
+              const docUrl = convertToEmbedUrl(documents[fullscreenIndex].url);
+              const type = getDocType(docUrl);
+              return type === 'pdf' ? (
+                <iframe
+                  src={docUrl}
+                  className="w-full h-full border-0"
+                  title={`doc-${fullscreenIndex}`}
+                  style={{ background: 'white', maxWidth: '90vw', maxHeight: '90vh' }}
+                />
+              ) : (
+                <img
+                  src={docUrl}
+                  className="max-w-full max-h-full object-contain pointer-events-none"
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                />
+              );
+            })()}
           </div>
 
           <button

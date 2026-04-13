@@ -14,7 +14,7 @@ interface Page {
 // Определяем тип документа по URL
 function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
   const lower = url.toLowerCase();
-  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com/file/d/')) {
+  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com') || lower.includes('docs.google.com')) {
     return 'pdf';
   }
   if (lower.match(/\.(mp4|webm|mov|avi|mkv)$/i) || lower.startsWith('data:video')) {
@@ -24,6 +24,19 @@ function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
     return 'audio';
   }
   return 'image';
+}
+
+// Конвертируем URL в embed-формат для iframe
+function convertToEmbedUrl(url: string): string {
+  const docsMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+  if (docsMatch) {
+    return `https://docs.google.com/document/d/${docsMatch[1]}/preview`;
+  }
+  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (driveMatch) {
+    return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+  }
+  return url;
 }
 
 interface DocumentStackProps {
@@ -238,22 +251,25 @@ export function DocumentStack({
             onMouseDown={(e) => handleMouseDown(e, index)}
             onClick={() => openFullscreen(index)}
           >
-            {getDocType(page.url) === 'pdf' ? (
-              <iframe
-                src={page.url}
-                className="w-full h-full pointer-events-none border-0"
-                title={`doc-${index}`}
-                style={{ background: 'white' }}
-              />
-            ) : (
-              <img
-                src={page.url}
-                alt=""
-                className="w-full h-full object-contain pointer-events-none"
-                draggable={false}
-                style={{ background: 'transparent' }}
-              />
-            )}
+            {(() => {
+              const embedUrl = convertToEmbedUrl(page.url);
+              return getDocType(embedUrl) === 'pdf' ? (
+                <iframe
+                  src={embedUrl}
+                  className="w-full h-full pointer-events-none border-0"
+                  title={`doc-${index}`}
+                  style={{ background: 'white' }}
+                />
+              ) : (
+                <img
+                  src={page.url}
+                  alt=""
+                  className="w-full h-full object-contain pointer-events-none"
+                  draggable={false}
+                  style={{ background: 'transparent' }}
+                />
+              );
+            })()}
           </div>
         ))}
       </div>
