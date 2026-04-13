@@ -35,6 +35,7 @@ interface CharacterEntry {
   is_update: boolean;
   created_at: string;
   target_section?: 'full_info' | 'tasks' | 'short_info' | 'notes';
+  target_task_id?: string;
 }
 
 interface DatabaseViewProps {
@@ -65,7 +66,6 @@ interface DatabaseViewProps {
   supabase: any;
   isSecret: boolean;
   canAccessAbd: boolean;
-  photo1InputRef: React.RefObject<HTMLInputElement>;
   getTaskPlaceholder: (status: Task['status']) => string;
   addTask?: () => void;
   updateTask?: (taskId: string, updates: Partial<Task>) => void;
@@ -101,7 +101,7 @@ export function DatabaseView({
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
   playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
-  photo1InputRef, getTaskPlaceholder, addTask, updateTask, deleteTask,
+  getTaskPlaceholder, addTask, updateTask, deleteTask,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
   const [detailSection, setDetailSection] = useState<'entries' | 'full_info' | 'tasks' | 'short_info' | 'notes'>('entries');
@@ -120,6 +120,8 @@ export function DatabaseView({
   const [detailForm, setDetailForm] = useState<Character | null>(null);
   // Task edit state
   const [editingTask, setEditingTask] = useState<{id: string; description: string; status: string; reward: string; timeLimit: string} | null>(null);
+  // Highlighted task ID for navigation from log
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
   // Full info edit state
   const [editingFullInfo, setEditingFullInfo] = useState(false);
   const [fullInfoText, setFullInfoText] = useState('');
@@ -132,6 +134,8 @@ export function DatabaseView({
   // New task form state
   const [showNewTaskForm, setShowNewTaskForm] = useState(false);
   const [newTaskForm, setNewTaskForm] = useState({ description: '', reward: '', timeLimit: '' });
+  // Ref for character photo upload (separate from bestiary)
+  const characterPhotoRef = useRef<HTMLInputElement>(null);
 
   const isEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
     isCreating || fieldEditMode[field];
@@ -154,8 +158,17 @@ export function DatabaseView({
 
   // Обработчик клика на запись — переход к разделу
   const handleEntryClick = (entry: CharacterEntry) => {
-    if (entry.target_section) {
-      playAllSound();
+    playAllSound();
+    if (entry.entry_type === 'task' || entry.entry_type === 'edit') {
+      // Переход к задачам
+      setDetailSection('tasks');
+      // Подсветка нужной задачи
+      if (entry.target_task_id) {
+        setHighlightedTaskId(entry.target_task_id);
+        // Убрать подсветку через 2 секунды
+        setTimeout(() => setHighlightedTaskId(null), 2000);
+      }
+    } else if (entry.target_section) {
       setDetailSection(entry.target_section);
     }
   };
@@ -193,7 +206,7 @@ export function DatabaseView({
   }, []);
 
   // Добавить новую запись
-  const addEntry = async (content: string, type: CharacterEntry['entry_type'], isUpdate = false) => {
+  const addEntry = async (content: string, type: CharacterEntry['entry_type'], isUpdate = false, targetTaskId?: string) => {
     if (!supabase || !selectedCharacter) return;
     const entry: CharacterEntry = {
       id: crypto.randomUUID(),
@@ -203,6 +216,8 @@ export function DatabaseView({
       entry_type: type,
       is_update: isUpdate,
       created_at: new Date().toISOString(),
+      target_section: type === 'task' || type === 'edit' ? 'tasks' : type as CharacterEntry['target_section'],
+      target_task_id: targetTaskId,
     };
     setEntries(prev => [...prev, entry]);
     await supabase.from(entriesTableName).insert(entry);
@@ -301,7 +316,7 @@ export function DatabaseView({
       console.error(`Failed to update ${tableName} tasks:`, error);
     }
 
-    addEntry(`Задача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`, 'task');
+    addEntry(`Задача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`, 'task', false, newTask.id);
     setTaskInput({ description: '', reward: '', timeLimit: '' });
     setDetailSection('entries');
   };
@@ -496,6 +511,8 @@ export function DatabaseView({
           entry_type: 'edit',
           is_update: true,
           created_at: new Date().toISOString(),
+          target_section: 'tasks',
+          target_task_id: editingTask.id,
         };
         await supabase.from(entriesTableName).insert(logEntry);
       }
@@ -536,6 +553,8 @@ export function DatabaseView({
       entry_type: 'task',
       is_update: false,
       created_at: new Date().toISOString(),
+      target_section: 'tasks',
+      target_task_id: task.id,
     };
     await supabase.from(entriesTableName).insert(logEntry);
     setNewTaskForm({ description: '', reward: '', timeLimit: '' });
@@ -603,10 +622,10 @@ export function DatabaseView({
               </div>
               <img src={editForm.photo} alt="Preview" className="w-40 h-56 object-cover rounded border border-[#2a2a2a] mb-3" />
               <div className="flex gap-2">
-                <button onClick={() => { playAllSound(); photo1InputRef.current?.click(); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>ФАЙЛ</button>
+                <button onClick={() => { playAllSound(); characterPhotoRef.current?.click(); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>ФАЙЛ</button>
                 <button onClick={() => { const url = prompt('Введите URL фотографии:'); if (url && editForm) setEditForm({ ...editForm, photo: url }); }} className={`flex-1 px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] hover:opacity-80 transition-all`}>URL</button>
               </div>
-              <input ref={photo1InputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file && editForm) { const reader = new FileReader(); reader.onload = (ev) => { if (ev.target?.result) setEditForm({ ...editForm, photo: ev.target.result as string }); }; reader.readAsDataURL(file); } }} />
+              <input ref={characterPhotoRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file && editForm) { const reader = new FileReader(); reader.onload = (ev) => { if (ev.target?.result) setEditForm({ ...editForm, photo: ev.target.result as string }); }; reader.readAsDataURL(file); } }} />
             </div>
 
             {/* Right - Fields */}
@@ -853,8 +872,6 @@ export function DatabaseView({
                       <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                         <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
                           [{formatEntryDate(entry.created_at)} | {entry.author_login}]
-                          {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
-                          {entry.target_section && <span className={`${isSecret ? 'text-green-600' : 'text-green-500'}`}> [ПЕРЕХОД]</span>}
                         </span>
                       </div>
                       <div className={`p-3 rounded-lg border transition-all ${
@@ -961,7 +978,9 @@ export function DatabaseView({
                       key={task.id}
                       onDoubleClick={() => startTaskEdit(task)}
                       className={`group relative p-3 rounded-lg border cursor-pointer transition-all ${
-                        isSecret ? 'bg-red-950/20 border-red-900/30 hover:bg-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
+                        task.id === highlightedTaskId
+                          ? isSecret ? 'bg-green-900/40 border-green-500/60 ring-2 ring-green-500/30' : 'bg-green-900/30 border-green-500/60 ring-2 ring-green-500/30'
+                          : isSecret ? 'bg-red-950/20 border-red-900/30 hover:bg-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a] hover:bg-[#1a1a1a]'
                       }`}
                     >
                       <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
