@@ -1,14 +1,21 @@
 // Утилита для кеширования данных в localStorage с автоматической синхронизацией с Supabase
 
 export interface CacheOptions {
-  ttl?: number; // Time to live в миллисекундах (по умолчанию 5 минут)
+  ttl?: number; // Time to live в миллисекундах (по умолчанию 30 минут)
   key: string; // Уникальный ключ для кеша
 }
 
-export class CacheManager {
-  private static prefix = 'srpit_cache_';
+// Версия кэша — при изменении структуры данных все старые кэши инвалидируются
+const CACHE_VERSION = 1;
 
-  static set<T>(key: string, data: T, ttl: number = 5 * 60 * 1000): void {
+export class CacheManager {
+  private static prefix = 'srpit_v' + CACHE_VERSION + '_';
+
+  // TTL по умолчанию: 30 минут для персонажей, 1 час для бестиария
+  static DEFAULT_TTL = 30 * 60 * 1000;
+  static LONG_TTL = 60 * 60 * 1000;
+
+  static set<T>(key: string, data: T, ttl: number = CacheManager.DEFAULT_TTL): void {
     try {
       const item = {
         data,
@@ -49,6 +56,22 @@ export class CacheManager {
     }
   }
 
+  // Получить данные, даже если кэш истёк (возвращает stale данные + флаг)
+  static getStale<T>(key: string): { data: T | null; isStale: boolean } {
+    try {
+      const itemStr = localStorage.getItem(this.prefix + key);
+      if (!itemStr) return { data: null, isStale: false };
+
+      const item = JSON.parse(itemStr);
+      const now = Date.now();
+      const isStale = now - item.timestamp > item.ttl;
+
+      return { data: item.data as T, isStale };
+    } catch (e) {
+      return { data: null, isStale: false };
+    }
+  }
+
   static clear(key: string): void {
     try {
       localStorage.removeItem(this.prefix + key);
@@ -67,6 +90,32 @@ export class CacheManager {
       });
     } catch (e) {
       console.warn('Failed to clear all cache:', e);
+    }
+  }
+
+  // Очистить только кэши с истёкшим TTL
+  static sweepExpired(): void {
+    try {
+      const keys = Object.keys(localStorage);
+      const now = Date.now();
+      keys.forEach(key => {
+        if (key.startsWith(this.prefix)) {
+          try {
+            const itemStr = localStorage.getItem(key);
+            if (itemStr) {
+              const item = JSON.parse(itemStr);
+              if (now - item.timestamp > item.ttl) {
+                localStorage.removeItem(key);
+              }
+            }
+          } catch {
+            // Невалидный JSON — удалить
+            localStorage.removeItem(key);
+          }
+        }
+      });
+    } catch (e) {
+      // ignore
     }
   }
 }

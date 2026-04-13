@@ -14,7 +14,8 @@
       "Bash(git push *)",
       "Bash(powershell *)",
       "Bash(python *)",
-      "Bash(ren *)"
+      "Bash(ren *)",
+      "Bash(npm install *)"
     ]
   },
   "$version": 3

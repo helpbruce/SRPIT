@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Component, ReactNode } from 'react';
 import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
+import { checkDiscordMembership } from './discordAuth';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
@@ -85,6 +86,11 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  // Discord verification
+  const [discordChecking, setDiscordChecking] = useState(false);
+  const [discordVerified, setDiscordVerified] = useState<boolean | null>(null);
+  const [discordId, setDiscordId] = useState('');
+
   const [newSectionName, setNewSectionName] = useState('');
   const [showNewSectionModal, setShowNewSectionModal] = useState(false);
 
@@ -275,7 +281,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             caseNumber: row.casenumber ?? '',
           }));
           setCharacters(mapped);
-          CacheManager.set('pda_characters', mapped, 10 * 60 * 1000);
+          CacheManager.set('pda_characters', mapped, CacheManager.LONG_TTL);
         }
 
         if (bestiaryRes.error) {
@@ -292,7 +298,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             anomalyNames: row.anomaly_names ?? [],
           }));
           setBestiaryEntries(mapped);
-          CacheManager.set('bestiary_entries', mapped, 10 * 60 * 1000);
+          CacheManager.set('bestiary_entries', mapped, CacheManager.LONG_TTL);
         }
       } finally {
         isLoading = false;
@@ -360,7 +366,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
           notes: row.notes ?? '', tasks: (row.tasks ?? []) as Task[], caseNumber: row.casenumber ?? '',
         }));
         setSecretCharacters(mapped);
-        CacheManager.set('secret_characters', mapped, 10 * 60 * 1000);
+        CacheManager.set('secret_characters', mapped, CacheManager.LONG_TTL);
       } finally { isLoading = false; }
     };
 
@@ -475,7 +481,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       const updated = isCreating 
         ? [...characters, editForm]
         : characters.map(c => c.id === editForm.id ? editForm : c);
-      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+      CacheManager.set('pda_characters', updated, CacheManager.LONG_TTL);
 
       supabase
         .from('pda_characters')
@@ -485,7 +491,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             console.error('Failed to upsert pda_character in Supabase:', error);
             alert('Ошибка сохранения: ' + error.message);
             // Откатываем кеш при ошибке
-            CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
+            CacheManager.set('pda_characters', characters, CacheManager.LONG_TTL);
           } else {
             console.log('Character saved successfully');
           }
@@ -502,7 +508,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (confirm('Удалить персонажа?')) {
       const updated = characters.filter(c => c.id !== id);
       setCharacters(updated);
-      CacheManager.set('pda_characters', updated, 10 * 60 * 1000);
+      CacheManager.set('pda_characters', updated, CacheManager.LONG_TTL);
       
       if (selectedCharacter?.id === id) {
         setSelectedCharacter(null);
@@ -518,7 +524,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
               console.error('Failed to delete pda_character from Supabase:', error);
               // Откатываем при ошибке
               setCharacters(characters);
-              CacheManager.set('pda_characters', characters, 10 * 60 * 1000);
+              CacheManager.set('pda_characters', characters, CacheManager.LONG_TTL);
             }
           });
       }
@@ -615,7 +621,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     
     setBestiaryEntries(updated);
     setSelectedEntry(bestiaryEditForm);
-    CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
+    CacheManager.set('bestiary_entries', updated, CacheManager.LONG_TTL);
 
     if (supabase) {
       const payload = {
@@ -638,7 +644,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             console.error('Failed to upsert bestiary_entry in Supabase:', error);
             // Откатываем при ошибке
             setBestiaryEntries(bestiaryEntries);
-            CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
+            CacheManager.set('bestiary_entries', bestiaryEntries, CacheManager.LONG_TTL);
           }
         });
     }
@@ -652,7 +658,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     if (confirm('Удалить запись?')) {
       const updated = bestiaryEntries.filter(e => e.id !== id);
       setBestiaryEntries(updated);
-      CacheManager.set('bestiary_entries', updated, 10 * 60 * 1000);
+      CacheManager.set('bestiary_entries', updated, CacheManager.LONG_TTL);
       
       if (selectedEntry?.id === id) {
         setSelectedEntry(null);
@@ -668,7 +674,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
               console.error('Failed to delete bestiary_entry from Supabase:', error);
               // Откатываем при ошибке
               setBestiaryEntries(bestiaryEntries);
-              CacheManager.set('bestiary_entries', bestiaryEntries, 10 * 60 * 1000);
+              CacheManager.set('bestiary_entries', bestiaryEntries, CacheManager.LONG_TTL);
             }
           });
       }
@@ -740,9 +746,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
 
   const getStatusDotColor = (status: string) => {
     switch (status) {
-      case 'Активен': return 'bg-gray-400';
+      case 'Активен': return 'bg-green-500';
       case 'Пропал': return 'bg-yellow-500';
-      case 'Мертв': return 'bg-black-500';
+      case 'Мертв': return 'bg-black-500 ring-1 ring-gray-600';
       case 'В розыске': return 'bg-red-500';
       default: return 'bg-gray-500';
     }
@@ -795,6 +801,31 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       alert('Введите логин и пароль');
       return;
     }
+
+    // Проверяем Discord membership если сервер настроен
+    const discordServerId = import.meta.env.VITE_DISCORD_SERVER_ID || import.meta.env.DISCORD_SERVER_ID;
+    if (discordServerId && !discordVerified) {
+      if (!discordId.trim()) {
+        alert('Для входа требуется указать Discord ID');
+        return;
+      }
+      setDiscordChecking(true);
+      try {
+        const result = await checkDiscordMembership(discordId.trim());
+        if (!result.isMember) {
+          alert('Вы не состоите в требуемом Discord сервере');
+          setDiscordChecking(false);
+          return;
+        }
+        setDiscordVerified(true);
+      } catch {
+        alert('Ошибка проверки Discord');
+        setDiscordChecking(false);
+        return;
+      }
+      setDiscordChecking(false);
+    }
+
     // Пытаемся забрать can_access_abd, но если колонки нет — фоллбэк
     let hasAbd = false;
     try {
@@ -903,6 +934,15 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
             </div>
             <div className="space-y-2">
+            {(import.meta.env.VITE_DISCORD_SERVER_ID || import.meta.env.DISCORD_SERVER_ID) && authMode === 'login' && !discordVerified && (
+              <input
+                type="text"
+                placeholder="Discord ID (для проверки)"
+                value={discordId}
+                onChange={(e) => setDiscordId(e.target.value)}
+                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
+              />
+            )}
             <input
             type="text"
             placeholder="Логин"
@@ -923,7 +963,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             }}
             className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
             />
-            
+
             </div>
             <div className="flex items-center gap-2 mt-4">
               <button
