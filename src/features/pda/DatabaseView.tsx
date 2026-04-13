@@ -92,6 +92,19 @@ export function DatabaseView({
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
   const [entries, setEntries] = useState<CharacterEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
+  const [fieldEditMode, setFieldEditMode] = useState({
+    name: false,
+    faction: false,
+    rank: false,
+    birthDate: false,
+  });
+
+  const isEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
+    isCreating || fieldEditMode[field];
+  const activateEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
+    setFieldEditMode(prev => ({ ...prev, [field]: true }));
+  const deactivateEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
+    setFieldEditMode(prev => ({ ...prev, [field]: false }));
 
   const baseColor = isSecret ? 'red' : 'gray';
   const bgColor = isSecret ? 'bg-[#0a0505]' : 'bg-[#050505]';
@@ -199,6 +212,7 @@ export function DatabaseView({
     setIsCreating(false);
     setIsEditing(false);
     setEditForm(null);
+    setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
     setTasksExpanded(false);
     setEditTasksExpanded(false);
   };
@@ -210,7 +224,7 @@ export function DatabaseView({
         <div className={`p-3 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
           <h2 className={`text-sm font-mono ${textMuted}`}>{isCreating ? 'НОВЫЙ ПЕРСОНАЖ' : 'РЕДАКТИРОВАНИЕ'}</h2>
           <div className="flex gap-2">
-            <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); setEditTasksExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
+            <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); setEditTasksExpanded(false); setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false }); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
             <button onClick={saveCharacter} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
               <Save className="w-4 h-4" /> СОХРАНИТЬ
             </button>
@@ -238,7 +252,11 @@ export function DatabaseView({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ИМЯ</label>
-                  <input type="text" placeholder="Имя" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                  {isEditableField('name') ? (
+                    <input type="text" placeholder="Имя" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} onBlur={() => !isCreating && deactivateEditableField('name')} />
+                  ) : (
+                    <div onDoubleClick={() => activateEditableField('name')} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30 cursor-pointer min-h-[38px]`}>{editForm.name || 'Дважды кликните для редактирования'}</div>
+                  )}
                 </div>
                 <div>
                   <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
@@ -251,74 +269,87 @@ export function DatabaseView({
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ФРАКЦИЯ</label>
-                  <input type="text" placeholder="Фракция" value={editForm.faction} onChange={(e) => setEditForm({ ...editForm, faction: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                  {isEditableField('faction') ? (
+                    <input type="text" placeholder="Фракция" value={editForm.faction} onChange={(e) => setEditForm({ ...editForm, faction: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} onBlur={() => deactivateEditableField('faction')} />
+                  ) : (
+                    <div onDoubleClick={() => activateEditableField('faction')} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30 cursor-pointer min-h-[38px]`}>{editForm.faction || 'Дважды кликните для редактирования'}</div>
+                  )}
                 </div>
                 <div>
                   <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>РАНГ</label>
-                  <input type="text" placeholder="Ранг" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                  {isEditableField('rank') ? (
+                    <input type="text" placeholder="Ранг" value={editForm.rank} onChange={(e) => setEditForm({ ...editForm, rank: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} onBlur={() => deactivateEditableField('rank')} />
+                  ) : (
+                    <div onDoubleClick={() => activateEditableField('rank')} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30 cursor-pointer min-h-[38px]`}>{editForm.rank || 'Дважды кликните для редактирования'}</div>
+                  )}
                 </div>
                 <div>
                   <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ДАТА РОЖДЕНИЯ</label>
-                  <input type="text" placeholder="Дата рождения" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} />
+                  {isEditableField('birthDate') ? (
+                    <input type="text" placeholder="Дата рождения" value={editForm.birthDate} onChange={(e) => setEditForm({ ...editForm, birthDate: e.target.value })} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`} onBlur={() => deactivateEditableField('birthDate')} />
+                  ) : (
+                    <div onDoubleClick={() => activateEditableField('birthDate')} className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30 cursor-pointer min-h-[38px]`}>{editForm.birthDate || 'Дважды кликните для редактирования'}</div>
+                  )}
                 </div>
               </div>
 
-              {/* Short Info with Add button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className={`block ${textMuted} text-[10px] font-mono`}>КРАТКАЯ ИНФО</label>
-                  <button
-                    onClick={() => {
-                      const content = editForm.shortInfo;
-                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                      addEntry(content, 'short_info');
-                      setEditForm({ ...editForm, shortInfo: '' });
-                    }}
-                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                  >
-                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                  </button>
-                </div>
-                <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
-              </div>
+              {!isCreating && (
+                <>
+                  {/* Short Info with Add button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`block ${textMuted} text-[10px] font-mono`}>КРАТКАЯ ИНФО</label>
+                      <button
+                        onClick={() => {
+                          const content = editForm.shortInfo;
+                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                          addEntry(content, 'short_info');
+                        }}
+                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                      >
+                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                      </button>
+                    </div>
+                    <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
+                  </div>
 
-              {/* Full Info with Add button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className={`block ${textMuted} text-[10px] font-mono`}>ПОЛНАЯ ИНФО</label>
-                  <button
-                    onClick={() => {
-                      const content = editForm.fullInfo;
-                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                      addEntry(content, 'full_info');
-                      setEditForm({ ...editForm, fullInfo: '' });
-                    }}
-                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                  >
-                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                  </button>
-                </div>
-                <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
-              </div>
+                  {/* Full Info with Add button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`block ${textMuted} text-[10px] font-mono`}>ПОЛНАЯ ИНФО</label>
+                      <button
+                        onClick={() => {
+                          const content = editForm.fullInfo;
+                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                          addEntry(content, 'full_info');
+                        }}
+                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                      >
+                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                      </button>
+                    </div>
+                    <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
+                  </div>
 
-              {/* Notes with Add button */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className={`block ${textMuted} text-[10px] font-mono`}>ЗАМЕТКИ</label>
-                  <button
-                    onClick={() => {
-                      const content = editForm.notes;
-                      if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                      addEntry(content, 'notes');
-                      setEditForm({ ...editForm, notes: '' });
-                    }}
-                    className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                  >
-                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                  </button>
-                </div>
-                <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Напишите заметку..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
-              </div>
+                  {/* Notes with Add button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`block ${textMuted} text-[10px] font-mono`}>ЗАМЕТКИ</label>
+                      <button
+                        onClick={() => {
+                          const content = editForm.notes;
+                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
+                          addEntry(content, 'notes');
+                        }}
+                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                      >
+                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                      </button>
+                    </div>
+                    <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Напишите заметку..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -330,9 +361,18 @@ export function DatabaseView({
   if (selectedCharacter) {
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
-        <div className={`p-3 border-b ${borderColor} flex-shrink-0`}>
+        <div className={`p-3 border-b ${borderColor} flex-shrink-0 flex items-center justify-between`}>
           <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
+          </button>
+          <button onClick={() => {
+            playAllSound();
+            setIsCreating(false);
+            setIsEditing(true);
+            setEditForm(selectedCharacter);
+            setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
+          }} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+            <Edit2 className="w-4 h-4" /> РЕДАКТИРОВАТЬ
           </button>
         </div>
 
@@ -432,7 +472,26 @@ export function DatabaseView({
           {viewMode === 'cards' ? <List className="w-3.5 h-3.5" /> : <Grid3X3 className="w-3.5 h-3.5" />}
         </button>
         <button
-          onClick={() => { playAllSound(); setIsCreating(true); setIsEditing(true); setEditForm({ id: crypto.randomUUID(), photo: '/icons/nodata.png', name: '', birthDate: '', faction: '', rank: '', status: 'Неизвестен', shortInfo: '', fullInfo: '', notes: '', caseNumber: '' }); setTasksExpanded(false); }}
+          onClick={() => {
+            playAllSound();
+            setIsCreating(true);
+            setIsEditing(true);
+            setEditForm({
+              id: crypto.randomUUID(),
+              photo: '/icons/nodata.png',
+              name: '',
+              birthDate: '',
+              faction: '',
+              rank: '',
+              status: 'Неизвестен',
+              shortInfo: '',
+              fullInfo: '',
+              notes: '',
+              caseNumber: ''
+            });
+            setTasksExpanded(false);
+            setFieldEditMode({ name: true, faction: true, rank: true, birthDate: true });
+          }}
           className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1`}
         >
           <Plus className="w-3 h-3" /> СОЗДАТЬ
