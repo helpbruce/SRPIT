@@ -36,7 +36,7 @@ function convertToEmbedUrl(url: string): string {
   // Google Docs
   const docsMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (docsMatch) {
-    return `https://docs.google.com/document/d/${docsMatch[1]}/preview`;
+    return `https://docs.google.com/document/d/${docsMatch[1]}/preview?chrome=false`;
   }
   // Google Drive
   const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);

@@ -30,7 +30,8 @@ function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
 function convertToEmbedUrl(url: string): string {
   const docsMatch = url.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (docsMatch) {
-    return `https://docs.google.com/document/d/${docsMatch[1]}/preview`;
+    // Используем режим embed без панелей управления
+    return `https://docs.google.com/document/d/${docsMatch[1]}/preview?chrome=false`;
   }
   const driveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (driveMatch) {
@@ -254,12 +255,20 @@ export function DocumentStack({
             {(() => {
               const embedUrl = convertToEmbedUrl(page.url);
               return getDocType(embedUrl) === 'pdf' ? (
-                <iframe
-                  src={embedUrl}
-                  className="w-full h-full pointer-events-none border-0"
-                  title={`doc-${index}`}
-                  style={{ background: 'white' }}
-                />
+                <div className="w-full h-full relative" style={{ background: 'white', overflow: 'hidden', clipPath: 'inset(0)' }}>
+                  <iframe
+                    src={embedUrl}
+                    className="w-full h-full border-0"
+                    title={`doc-${index}`}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      pointerEvents: 'none',
+                    }}
+                    scrolling="no"
+                  />
+                </div>
               ) : (
                 <img
                   src={page.url}
