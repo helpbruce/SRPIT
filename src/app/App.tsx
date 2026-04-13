@@ -33,47 +33,23 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState(false);
 
-  // 5 аккаунтов для доступа к сайту
-  const siteAccounts = [
-    { login: 'admin', password: 'admin', role: 'admin' as const },
-    { login: 'user1', password: '1234', role: 'user' as const },
-    { login: 'user2', password: '1234', role: 'user' as const },
-    { login: 'user3', password: '1234', role: 'user' as const },
-    { login: 'user4', password: '1234', role: 'user' as const },
-  ];
-  const [isAdmin, setIsAdmin] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('srpit_admin') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [siteAuthorized, setSiteAuthorized] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('srpit_site_authorized') === 'true';
-    } catch {
-      return false;
-    }
-  });
   // Discord verification gate
   const [discordChecking, setDiscordChecking] = useState(true);
   const [discordVerified, setDiscordVerified] = useState(false);
   const [discordError, setDiscordError] = useState(false);
 
-  // Auto-verify Discord on site load (before site auth)
+  // Auto-verify Discord on site load
   useEffect(() => {
     if (!isDiscordConfigured()) {
       setDiscordChecking(false);
       setDiscordVerified(true);
       return;
     }
-    // Проверяем, уже верифицирован ли пользователь
     if (localStorage.getItem('srpit_discord_verified') === 'true') {
       setDiscordChecking(false);
       setDiscordVerified(true);
       return;
     }
-    // Авто-верификация через Discord OAuth
     verifyDiscordMembership().then((result) => {
       setDiscordChecking(false);
       if (result.success) {
@@ -84,10 +60,6 @@ export default function App() {
       }
     });
   }, []);
-
-  const [siteLoginValue, setSiteLoginValue] = useState('');
-  const [sitePasswordValue, setSitePasswordValue] = useState('');
-  const [siteAuthError, setSiteAuthError] = useState('');
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -321,34 +293,6 @@ export default function App() {
     }
   };
 
-  const handleSiteLogin = () => {
-    const account = siteAccounts.find(a => a.login === siteLoginValue && a.password === sitePasswordValue);
-    if (account) {
-      try {
-        localStorage.setItem('srpit_site_authorized', 'true');
-        localStorage.setItem('srpit_admin', account.role === 'admin' ? 'true' : 'false');
-      } catch {}
-      setIsAdmin(account.role === 'admin');
-      setSiteAuthorized(true);
-      setSiteAuthError('');
-      return;
-    }
-
-    setSiteAuthError('Неверный логин или пароль');
-  };
-
-  const handleSiteLogout = () => {
-    try {
-      localStorage.removeItem('srpit_site_authorized');
-      localStorage.removeItem('srpit_admin');
-    } catch {}
-    setIsAdmin(false);
-    setSiteAuthorized(false);
-    setSiteLoginValue('');
-    setSitePasswordValue('');
-    setSiteAuthError('');
-  };
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isFolderOpen) return;
@@ -414,44 +358,6 @@ export default function App() {
             className="px-6 py-3 bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl text-gray-400 font-mono text-sm hover:bg-[#3a3a3a]"
           >
             ПОПРОБОВАТЬ СНОВА
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!siteAuthorized) {
-    return (
-      <div className="fixed inset-0 bg-[#050505] text-white flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-3xl border border-[#3a3a3a] bg-[#111111] p-8 shadow-2xl">
-          <h1 className="text-2xl font-bold mb-4">Закрытый доступ</h1>
-          <p className="text-sm text-gray-400 mb-4">
-            Сайт защищён. Введите логин и пароль для доступа.
-          </p>
-          <label className="block mb-3 text-xs uppercase tracking-[0.18em] text-gray-400">
-            Логин
-            <input
-              value={siteLoginValue}
-              onChange={(e) => setSiteLoginValue(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#333] bg-[#0b0b0b] p-3 text-white outline-none focus:border-[#666]"
-            />
-          </label>
-          <label className="block mb-3 text-xs uppercase tracking-[0.18em] text-gray-400">
-            Пароль
-            <input
-              type="password"
-              value={sitePasswordValue}
-              onChange={(e) => setSitePasswordValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSiteLogin(); }}
-              className="mt-2 w-full rounded-xl border border-[#333] bg-[#0b0b0b] p-3 text-white outline-none focus:border-[#666]"
-            />
-          </label>
-          {siteAuthError && <div className="mb-3 text-xs text-red-400">{siteAuthError}</div>}
-          <button
-            onClick={handleSiteLogin}
-            className="w-full rounded-xl bg-[#2f71ff] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4d8dff]"
-          >
-            Войти
           </button>
         </div>
       </div>
@@ -764,13 +670,6 @@ export default function App() {
 
         <WelcomeGuide />
       </Suspense>
-
-      <button
-        onClick={handleSiteLogout}
-        className="fixed top-4 right-4 z-[11001] rounded-full border border-white/20 bg-black/70 px-4 py-2 text-xs font-semibold text-white backdrop-blur-sm hover:bg-black"
-      >
-        Выйти
-      </button>
 
       {/* Global Mute Button */}
       <button
