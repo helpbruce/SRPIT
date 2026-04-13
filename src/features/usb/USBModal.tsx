@@ -210,12 +210,15 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
   useEffect(() => {
     if (isOpen) {
       playStartSound();
-      // Показываем спиннер на короткое время при открытии
-      setShowLoading(true);
-      setLoadingText('ЗАГРУЗКА USB...');
-      setTimeout(() => {
-        setShowLoading(false);
-      }, 600);
+      // Показываем спиннер только если нет кэша
+      const cached = CacheManager.get<USBFiles>('usb_files');
+      if (!cached) {
+        setShowLoading(true);
+        setLoadingText('ЗАГРУЗКА USB...');
+        setTimeout(() => {
+          setShowLoading(false);
+        }, 600);
+      }
     }
   }, [isOpen]);
 

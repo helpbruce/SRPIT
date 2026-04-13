@@ -230,7 +230,6 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   // Local auth init on open
   useEffect(() => {
     if (!isOpen) return;
-    setShowLoadingSpinner(true);
     try {
       const saved = localStorage.getItem('pda_login');
       const savedRole = localStorage.getItem('pda_user_role') as 'user' | 'admin' | null;
@@ -249,8 +248,15 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     } catch {
       setShowAuthModal(true);
     }
-    // Скрываем спиннер через 600ms
-    setTimeout(() => setShowLoadingSpinner(false), 600);
+    // Показываем спиннер только если нет кэша
+    const cachedChars = CacheManager.get<Character[]>('pda_characters');
+    const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
+    if (!cachedChars || !cachedBestiary) {
+      setShowLoadingSpinner(true);
+      setTimeout(() => setShowLoadingSpinner(false), 600);
+    } else {
+      setShowLoadingSpinner(false);
+    }
   }, [isOpen]);
 
   // Load data from Supabase + кеш + realtime с debounce
