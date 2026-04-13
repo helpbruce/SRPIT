@@ -182,7 +182,11 @@ CREATE POLICY "documents_write_anon" ON documents
 -- ============================================
 -- 7. USB файлы
 -- ============================================
-CREATE TYPE usb_file_type AS ENUM ('photo', 'video', 'audio');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'usb_file_type') THEN
+    CREATE TYPE usb_file_type AS ENUM ('photo', 'video', 'audio');
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS usb_files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -206,8 +210,17 @@ CREATE POLICY "Anyone can insert usb_files" ON usb_files
 -- ============================================
 -- 8. Бестиарий
 -- ============================================
-CREATE TYPE bestiary_entry_type AS ENUM ('mutant', 'anomaly', 'artifact');
-CREATE TYPE danger_level AS ENUM ('низкий', 'средний', 'высокий', 'смертельный');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'bestiary_entry_type') THEN
+    CREATE TYPE bestiary_entry_type AS ENUM ('mutant', 'anomaly', 'artifact');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'danger_level') THEN
+    CREATE TYPE danger_level AS ENUM ('низкий', 'средний', 'высокий', 'смертельный');
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS bestiary_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
