@@ -538,7 +538,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     const newTask: Task = {
       id: `task-${Date.now()}`,
       description: '',
-      status: 'в работе'
+      status: 'в работе',
+      reward: '',
+      timeLimit: ''
     };
     setEditForm({
       ...editForm,

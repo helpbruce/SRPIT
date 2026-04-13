@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar, Save, MessageSquare, Edit3 } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List, Grid3X3, Calendar, Save, MessageSquare, Edit3, CheckSquare, FileText, X } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
@@ -22,6 +22,8 @@ interface Task {
   id: string;
   description: string;
   status: 'в работе' | 'провалено' | 'выполнено';
+  reward?: string;
+  timeLimit?: string;
 }
 
 interface CharacterEntry {
@@ -100,6 +102,8 @@ export function DatabaseView({
   photo1InputRef, getTaskPlaceholder, addTask, updateTask, deleteTask,
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
+  const [viewTasksExpanded, setViewTasksExpanded] = useState(false);
+  const [viewFullInfoExpanded, setViewFullInfoExpanded] = useState(false);
   const [entries, setEntries] = useState<CharacterEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [fieldEditMode, setFieldEditMode] = useState({
@@ -337,61 +341,22 @@ export function DatabaseView({
 
               {!isCreating && (
                 <>
-                  {/* Short Info with Add button */}
+                  {/* Short Info - always editable */}
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={`block ${textMuted} text-[10px] font-mono`}>КРАТКАЯ ИНФО</label>
-                      <button
-                        onClick={() => {
-                          const content = editForm.shortInfo;
-                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                          addEntry(content, 'short_info');
-                          setEditForm({ ...editForm, shortInfo: '' });
-                        }}
-                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                      >
-                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                      </button>
-                    </div>
-                    <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>КРАТКАЯ ИНФО</label>
+                    <textarea value={editForm.shortInfo} onChange={(e) => setEditForm({ ...editForm, shortInfo: e.target.value })} placeholder="Краткая информация о персонаже..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={3} />
                   </div>
 
-                  {/* Full Info with Add button */}
+                  {/* Full Info - always editable */}
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={`block ${textMuted} text-[10px] font-mono`}>ПОЛНАЯ ИНФО</label>
-                      <button
-                        onClick={() => {
-                          const content = editForm.fullInfo;
-                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                          addEntry(content, 'full_info');
-                          setEditForm({ ...editForm, fullInfo: '' });
-                        }}
-                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                      >
-                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                      </button>
-                    </div>
-                    <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} placeholder="Напишите запись..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ПОЛНАЯ ИНФО</label>
+                    <textarea value={editForm.fullInfo} onChange={(e) => setEditForm({ ...editForm, fullInfo: e.target.value })} placeholder="Полная информация о персонаже..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={4} />
                   </div>
 
-                  {/* Notes with Add button */}
+                  {/* Notes - always editable */}
                   <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={`block ${textMuted} text-[10px] font-mono`}>ЗАМЕТКИ</label>
-                      <button
-                        onClick={() => {
-                          const content = editForm.notes;
-                          if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
-                          addEntry(content, 'notes');
-                          setEditForm({ ...editForm, notes: '' });
-                        }}
-                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
-                      >
-                        <Plus className="w-3 h-3" /> ДОБАВИТЬ
-                      </button>
-                    </div>
-                    <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Напишите заметку..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
+                    <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАМЕТКИ</label>
+                    <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Заметки..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
                   </div>
 
                   {/* Tasks section */}
@@ -440,15 +405,29 @@ export function DatabaseView({
           <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
-          <button onClick={() => {
-            playAllSound();
-            setIsCreating(false);
-            setIsEditing(true);
-            setEditForm(selectedCharacter);
-            setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
-          }} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
-            <Edit2 className="w-4 h-4" /> РЕДАКТИРОВАТЬ
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => { playAllSound(); setViewTasksExpanded(true); }}
+              className={`px-3 py-1.5 ${isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+            >
+              <CheckSquare className="w-4 h-4" /> ЗАДАЧИ
+            </button>
+            <button
+              onClick={() => { playAllSound(); setViewFullInfoExpanded(true); }}
+              className={`px-3 py-1.5 ${isSecret ? 'bg-blue-900/30 border-blue-800 text-blue-400' : 'bg-blue-700/30 border-blue-600 text-blue-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}
+            >
+              <FileText className="w-4 h-4" /> ПОЛНАЯ ИНФО
+            </button>
+            <button onClick={() => {
+              playAllSound();
+              setIsCreating(false);
+              setIsEditing(true);
+              setEditForm(selectedCharacter);
+              setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
+            }} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+              <Edit2 className="w-4 h-4" /> РЕДАКТИРОВАТЬ
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto pda-scrollbar">
@@ -485,14 +464,12 @@ export function DatabaseView({
               <div className={`${textMuted} font-mono text-xs`}>Записей пока нет.</div>
             ) : (
               entries.map(entry => {
-                const datePrefix = formatEntryDate(entry.created_at);
-                const closingBracket = ']';
                 return (
                   <div key={entry.id} className="group relative">
                     {/* Hover: full metadata */}
-                    <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                      <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px]`}>
-                        {datePrefix}{entry.author_login}{closingBracket}
+                    <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                      <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
+                        {entry.author_login} • {formatEntryDate(entry.created_at).split(' | ')[1]}
                         {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
                       </span>
                     </div>
@@ -505,9 +482,6 @@ export function DatabaseView({
                         : isSecret ? 'bg-red-950/30 border-red-900/30' : 'bg-[#0a0a0a] border-[#2a2a2a]'
                     }`}>
                       <div className={`${textColor} font-mono text-xs whitespace-pre-wrap break-words`}>{entry.content}</div>
-                      <div className={`mt-1 text-[9px] font-mono ${isSecret ? 'text-red-700' : 'text-gray-600'}`}>
-                        {entry.author_login} • {datePrefix.split(' | ')[1]}
-                      </div>
                     </div>
                   </div>
                 );
@@ -675,17 +649,9 @@ export function DatabaseView({
               {editForm.tasks && editForm.tasks.length > 0 ? (
                 editForm.tasks.map((task, index) => (
                   <div key={task.id} className={`p-3 border rounded ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
-                    <div className="flex items-start gap-3">
-                      <select
-                        value={task.status}
-                        onChange={(e) => updateTask(task.id, { status: e.target.value as Task['status'] })}
-                        className={`px-2 py-1 text-xs font-mono border rounded ${inputBg} ${textColor} min-w-[100px]`}
-                      >
-                        <option value="в работе">в работе</option>
-                        <option value="провалено">провалено</option>
-                        <option value="выполнено">выполнено</option>
-                      </select>
-                      <div className="flex-1">
+                    <div className="space-y-3">
+                      <div>
+                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАНИЕ</label>
                         <textarea
                           value={task.description}
                           onChange={(e) => updateTask(task.id, { description: e.target.value })}
@@ -694,12 +660,48 @@ export function DatabaseView({
                           rows={2}
                         />
                       </div>
-                      <button
-                        onClick={() => deleteTask(task.id)}
-                        className="text-red-500 hover:text-red-400 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
+                          <input
+                            type="text"
+                            value={task.reward || ''}
+                            onChange={(e) => updateTask(task.id, { reward: e.target.value })}
+                            placeholder="Награда за выполнение"
+                            className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                          />
+                        </div>
+                        <div>
+                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                          <input
+                            type="text"
+                            value={task.timeLimit || ''}
+                            onChange={(e) => updateTask(task.id, { timeLimit: e.target.value })}
+                            placeholder="Срок выполнения"
+                            className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
+                          <select
+                            value={task.status}
+                            onChange={(e) => updateTask(task.id, { status: e.target.value as Task['status'] })}
+                            className={`px-3 py-1 text-xs font-mono border rounded ${inputBg} ${textColor}`}
+                          >
+                            <option value="в работе">в работе</option>
+                            <option value="провалено">провалено</option>
+                            <option value="выполнено">выполнено</option>
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => deleteTask(task.id)}
+                          className="text-red-500 hover:text-red-400 p-1 mt-4"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -719,6 +721,113 @@ export function DatabaseView({
               </button>
               <button
                 onClick={() => setEditTasksExpanded(false)}
+                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
+              >
+                ЗАКРЫТЬ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Tasks Modal */}
+      {viewTasksExpanded && selectedCharacter && (
+        <div className="fixed inset-0 z-[100030] flex items-center justify-center pointer-events-auto">
+          <div className="w-[min(90vw,600px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className={`${textLight} font-mono text-sm font-bold`}>ЗАДАЧИ - {selectedCharacter.name}</h3>
+              <button
+                onClick={() => setViewTasksExpanded(false)}
+                className="text-gray-500 hover:text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pda-scrollbar space-y-3">
+              {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
+                selectedCharacter.tasks.map((task, index) => (
+                  <div key={task.id} className={`p-4 border rounded ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
+                    <div className="space-y-3">
+                      <div>
+                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАНИЕ</label>
+                        <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[60px]`}>
+                          {task.description || 'Описание отсутствует'}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
+                          <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
+                            {task.reward || 'Не указана'}
+                          </div>
+                        </div>
+                        <div>
+                          <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                          <div className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor}`}>
+                            {task.timeLimit || 'Не указано'}
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>СТАТУС</label>
+                        <div className={`inline-flex items-center gap-2 px-3 py-1 rounded border font-mono text-xs ${
+                          task.status === 'в работе' ? 'bg-yellow-500/20 border-yellow-500 text-yellow-400' :
+                          task.status === 'провалено' ? 'bg-red-500/20 border-red-500 text-red-400' :
+                          'bg-green-500/20 border-green-500 text-green-400'
+                        }`}>
+                          <div className={`w-2 h-2 rounded-full ${
+                            task.status === 'в работе' ? 'bg-yellow-500' :
+                            task.status === 'провалено' ? 'bg-red-500' : 'bg-green-500'
+                          }`}></div>
+                          {task.status}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className={`${textMuted} font-mono text-xs text-center py-8`}>
+                  Задач нет
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-4 flex-shrink-0">
+              <button
+                onClick={() => setViewTasksExpanded(false)}
+                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
+              >
+                ЗАКРЫТЬ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Full Info Modal */}
+      {viewFullInfoExpanded && selectedCharacter && (
+        <div className="fixed inset-0 z-[100030] flex items-center justify-center pointer-events-auto">
+          <div className="w-[min(90vw,600px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className={`${textLight} font-mono text-sm font-bold`}>ПОЛНАЯ ИНФОРМАЦИЯ - {selectedCharacter.name}</h3>
+              <button
+                onClick={() => setViewFullInfoExpanded(false)}
+                className="text-gray-500 hover:text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pda-scrollbar">
+              <div className={`w-full p-4 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[300px] whitespace-pre-wrap`}>
+                {selectedCharacter.fullInfo || 'Полная информация отсутствует'}
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-4 flex-shrink-0">
+              <button
+                onClick={() => setViewFullInfoExpanded(false)}
                 className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
               >
                 ЗАКРЫТЬ
