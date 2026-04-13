@@ -255,19 +255,26 @@ export function DocumentStack({
             {(() => {
               const embedUrl = convertToEmbedUrl(page.url);
               return getDocType(embedUrl) === 'pdf' ? (
-                <div className="w-full h-full relative" style={{ background: 'white', overflow: 'hidden', clipPath: 'inset(0)' }}>
-                  <iframe
-                    src={embedUrl}
-                    className="w-full h-full border-0"
-                    title={`doc-${index}`}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      border: 'none',
-                      pointerEvents: 'none',
-                    }}
-                    scrolling="no"
-                  />
+                <div className="w-full h-full relative" style={{ background: 'white', overflow: 'hidden' }}>
+                  <div style={{
+                    position: 'absolute',
+                    inset: '-25px',
+                    overflow: 'hidden',
+                    pointerEvents: 'none',
+                  }}>
+                    <iframe
+                      src={embedUrl}
+                      title={`doc-${index}`}
+                      style={{
+                        width: 'calc(100% + 50px)',
+                        height: 'calc(100% + 50px)',
+                        border: 'none',
+                        transform: 'scale(1.05)',
+                        transformOrigin: 'top center',
+                      }}
+                      scrolling="no"
+                    />
+                  </div>
                 </div>
               ) : (
                 <img
