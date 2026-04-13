@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, Component, ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, Component, ReactNode } from 'react';
 import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
-import { debounce } from '../../shared/lib/realtimeUtils';
+import { debounce, deduplicateLoader } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
 
 // TTL для кэша: 24 часа
@@ -130,6 +130,8 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const photo2InputRef = useRef<HTMLInputElement>(null);
   const allSoundRef = useRef<HTMLAudioElement>(null);
   const saveSoundRef = useRef<HTMLAudioElement>(null);
+  const isLoadedRef = useRef(false);
+  const channelRef = useRef<any>(null);
 
   const [showAnomalyDropdown, setShowAnomalyDropdown] = useState(false);
 
@@ -248,43 +250,30 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     } catch {
       setShowAuthModal(true);
     }
-    // Показываем спиннер только если нет кэша
+    // Загружаем кэш и показываем его сразу
     const cachedChars = CacheManager.get<Character[]>('pda_characters');
     const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
-    if (!cachedChars || !cachedBestiary) {
-      setShowLoadingSpinner(true);
-      setTimeout(() => setShowLoadingSpinner(false), 600);
-    } else {
-      setShowLoadingSpinner(false);
-    }
+    if (cachedChars) setCharacters(cachedChars);
+    if (cachedBestiary) setBestiaryEntries(cachedBestiary);
+    // Показываем спиннер только если ОБОИХ кэшей нет
+    setShowLoadingSpinner(!cachedChars || !cachedBestiary);
   }, [isOpen]);
 
-  // Load data from Supabase + кеш + realtime с debounce
-  useEffect(() => {
-    if (!supabase) {
-      const cachedChars = CacheManager.get<Character[]>('pda_characters');
-      const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
-      if (cachedChars) setCharacters(cachedChars);
-      if (cachedBestiary) setBestiaryEntries(cachedBestiary);
-      return;
-    }
-
-    let isMounted = true;
-    let isLoading = false;
-
-    const loadData = async () => {
-      if (isLoading) return;
-      isLoading = true;
+  // Дедублицированные загрузки данных
+  
+  const loadDataFromSupabase = useCallback(
+    deduplicateLoader(async () => {
+      if (!supabase) return { chars: [], bestiary: [] };
+      
       try {
         const [charactersRes, bestiaryRes] = await Promise.all([
           supabase.from('pda_characters').select('*').order('updated_at', { ascending: true }),
           supabase.from('bestiary_entries').select('*').order('updated_at', { ascending: true }),
         ]);
 
-        if (charactersRes.error) {
-          console.error('Failed to load pda_characters from Supabase:', charactersRes.error);
-        } else if (isMounted && charactersRes.data) {
-          const mapped: Character[] = charactersRes.data.map((row: any) => ({
+        const chars: Character[] = [];
+        if (!charactersRes.error && charactersRes.data) {
+          chars.push(...charactersRes.data.map((row: any) => ({
             id: row.id,
             photo: row.photo ?? '/icons/nodata.png',
             name: row.name ?? '',
@@ -297,15 +286,12 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             notes: row.notes ?? '',
             tasks: (row.tasks ?? []) as Task[],
             caseNumber: row.casenumber ?? '',
-          }));
-          setCharacters(mapped);
-          CacheManager.set('pda_characters', mapped, CACHE_TTL);
+          })));
         }
 
-        if (bestiaryRes.error) {
-          console.error('Failed to load bestiary_entries from Supabase:', bestiaryRes.error);
-        } else if (isMounted && bestiaryRes.data) {
-          const mapped: BestiaryEntry[] = bestiaryRes.data.map((row: any) => ({
+        const bestiary: BestiaryEntry[] = [];
+        if (!bestiaryRes.error && bestiaryRes.data) {
+          bestiary.push(...bestiaryRes.data.map((row: any) => ({
             id: row.id,
             type: row.type,
             name: row.name,
@@ -314,43 +300,69 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
             fullInfo: row.full_info ?? '',
             dangerLevel: row.danger_level ?? 'средний',
             anomalyNames: row.anomaly_names ?? [],
-          }));
-          setBestiaryEntries(mapped);
-          CacheManager.set('bestiary_entries', mapped, CACHE_TTL);
+          })));
         }
-      } finally {
-        isLoading = false;
+
+        return { chars, bestiary };
+      } catch (err) {
+        console.error('Error loading PDA data:', err);
+        return { chars: [], bestiary: [] };
       }
-    };
+    }),
+    []
+  );
 
-    // Начальная загрузка — сначала кеш, потом Supabase
-    const cachedChars = CacheManager.get<Character[]>('pda_characters');
-    const cachedBestiary = CacheManager.get<BestiaryEntry[]>('bestiary_entries');
-    if (cachedChars && isMounted) setCharacters(cachedChars);
-    if (cachedBestiary && isMounted) setBestiaryEntries(cachedBestiary);
-    loadData();
+  // Load data from Supabase + кеш + realtime с debounce
+  useEffect(() => {
+    if (!isOpen) return;
 
-    // Realtime с debounce — 500ms
-    const debouncedLoad = debounce(loadData, 500);
-    const channel = supabase
-      .channel('pda_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'pda_characters' },
-        debouncedLoad
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'bestiary_entries' },
-        debouncedLoad
-      )
-      .subscribe();
+    let isMounted = true;
+
+    // Загружаем из Supabase асинхронно
+    loadDataFromSupabase().then(({ chars, bestiary }) => {
+      if (!isMounted) return;
+      setCharacters(chars);
+      setBestiaryEntries(bestiary);
+      CacheManager.set('pda_characters', chars, CACHE_TTL);
+      CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+      setShowLoadingSpinner(false);
+      isLoadedRef.current = true;
+    });
+
+    // Realtime с debounce — 800ms для лучшей производительности
+    const debouncedLoad = debounce(async () => {
+      const { chars, bestiary } = await loadDataFromSupabase();
+      if (isMounted) {
+        setCharacters(chars);
+        setBestiaryEntries(bestiary);
+        CacheManager.set('pda_characters', chars, CACHE_TTL);
+        CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+      }
+    }, 800);
+
+    if (supabase) {
+      channelRef.current = supabase
+        .channel('pda_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'pda_characters' },
+          debouncedLoad
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'bestiary_entries' },
+          debouncedLoad
+        )
+        .subscribe();
+    }
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase?.removeChannel(channelRef.current);
+      }
     };
-  }, []);
+  }, [isOpen, loadDataFromSupabase]);
 
   // Secret characters (АБД) — загрузка только если admin
   const [secretCharacters, setSecretCharacters] = useState<Character[]>([]);
@@ -362,45 +374,65 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   const [secretTasksExpanded, setSecretTasksExpanded] = useState(false);
   const [expandedSecretShortInfo, setExpandedSecretShortInfo] = useState<string | null>(null);
 
+  const loadSecretCharactersFromSupabase = useCallback(
+    deduplicateLoader(async () => {
+      if (!supabase) return [];
+      const { data, error } = await supabase
+        .from('secret_characters')
+        .select('*')
+        .order('updated_at', { ascending: true });
+      
+      if (error || !data) return [];
+      
+      return data.map((row: any) => ({
+        id: row.id,
+        photo: row.photo ?? '/icons/nodata.png',
+        name: row.name ?? '',
+        birthDate: row.birthdate ?? '',
+        faction: row.faction ?? '',
+        rank: row.rank ?? '',
+        status: row.status ?? 'Неизвестен',
+        shortInfo: row.shortinfo ?? '',
+        fullInfo: row.fullinfo ?? '',
+        notes: row.notes ?? '',
+        tasks: (row.tasks ?? []) as Task[],
+        caseNumber: row.casenumber ?? '',
+      }));
+    }),
+    []
+  );
+
   useEffect(() => {
-    if (!supabase || !canAccessAbd) return;
+    if (!isOpen || !supabase || !canAccessAbd) return;
+    
     let isMounted = true;
-    let isLoading = false;
-
-    const loadSecret = async () => {
-      if (isLoading) return;
-      isLoading = true;
-      try {
-        const { data, error } = await supabase
-          .from('secret_characters')
-          .select('*')
-          .order('updated_at', { ascending: true });
-        if (error) { console.error('Failed to load secret_characters:', error); return; }
-        if (!isMounted || !data) return;
-        const mapped: Character[] = data.map((row: any) => ({
-          id: row.id, photo: row.photo ?? '/icons/nodata.png', name: row.name ?? '',
-          birthDate: row.birthdate ?? '', faction: row.faction ?? '', rank: row.rank ?? '',
-          status: row.status ?? 'Неизвестен', shortInfo: row.shortinfo ?? '', fullInfo: row.fullinfo ?? '',
-          notes: row.notes ?? '', tasks: (row.tasks ?? []) as Task[], caseNumber: row.casenumber ?? '',
-        }));
-        setSecretCharacters(mapped);
-        CacheManager.set('secret_characters', mapped, CACHE_TTL);
-      } finally { isLoading = false; }
-    };
-
     const cached = CacheManager.get<Character[]>('secret_characters');
     if (cached && isMounted) setSecretCharacters(cached);
-    loadSecret();
 
-    const debouncedLoad = debounce(loadSecret, 500);
+    loadSecretCharactersFromSupabase().then(data => {
+      if (!isMounted) return;
+      setSecretCharacters(data);
+      CacheManager.set('secret_characters', data, CACHE_TTL);
+    });
+
+    const debouncedLoad = debounce(async () => {
+      const data = await loadSecretCharactersFromSupabase();
+      if (isMounted) {
+        setSecretCharacters(data);
+        CacheManager.set('secret_characters', data, CACHE_TTL);
+      }
+    }, 800);
+
     const channel = supabase
       .channel('secret_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'secret_characters' },
-        () => { if (isMounted) debouncedLoad(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'secret_characters' }, debouncedLoad)
       .subscribe();
 
-    return () => { isMounted = false; supabase.removeChannel(channel); };
-  }, [canAccessAbd]);
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [isOpen, canAccessAbd, loadSecretCharactersFromSupabase]);
 
 
   const filteredCharacters = characters.filter(char => {

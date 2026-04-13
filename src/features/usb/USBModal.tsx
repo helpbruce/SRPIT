@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, X } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
-import { debounce } from '../../shared/lib/realtimeUtils';
+import { debounce, deduplicateLoader } from '../../shared/lib/realtimeUtils';
 
 // TTL для кэша: 24 часа
 const CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -62,6 +62,8 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
   const allSoundRef = useRef<HTMLAudioElement>(null);
   const delSoundRef = useRef<HTMLAudioElement>(null);
   const startSoundRef = useRef<HTMLAudioElement>(null);
+  const isLoadedRef = useRef(false);
+  const channelRef = useRef<any>(null);
 
   const playAllSound = () => {
     if (isMuted) return;
@@ -135,112 +137,93 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
     };
   }, [viewerFile, currentType, viewerIndex]);
 
+  // Дедублицированная загрузка данных
+  const loadUSBFilesFromSupabase = useCallback(
+    deduplicateLoader(async () => {
+      if (!supabase) return { photo: [], video: [], audio: [] };
+      const { data, error } = await supabase
+        .from('usb_files')
+        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+        .order('created_at', { ascending: true });
+
+      if (error || !data) return { photo: [], video: [], audio: [] };
+
+      const next: USBFiles = { photo: [], video: [], audio: [] };
+      for (const row of data) {
+        const type = row.type as 'photo' | 'video' | 'audio';
+        next[type].push({
+          id: row.id as string,
+          url: row.url as string,
+          name: row.name as string,
+          createdAt: (row.created_at_label as string) ?? '',
+          is_protected: (row.is_protected as boolean) ?? false,
+          password_hash: (row.password_hash as string) ?? null,
+          protected_hint: (row.protected_hint as string) ?? null,
+        });
+      }
+      return next;
+    }),
+    []
+  );
+
   // Load USB files from Supabase + кеш + realtime с debounce
   useEffect(() => {
-    if (!supabase) {
-      const cached = CacheManager.get<USBFiles>('usb_files');
-      if (cached) setUsbFiles(cached);
-      return;
-    }
+    if (!isOpen) return;
 
     let isMounted = true;
 
-    // СРАЗУ загружаем из кэша
+    // Показываем кэшированные данные сразу, только если их еще нет
+    if (!isLoadedRef.current && !usbFiles.photo.length && !usbFiles.video.length && !usbFiles.audio.length) {
+      const cached = CacheManager.get<USBFiles>('usb_files');
+      if (cached) {
+        setUsbFiles(cached);
+        isLoadedRef.current = true;
+      }
+    }
+
+    // Если нет кэша, показываем спиннер
     const cached = CacheManager.get<USBFiles>('usb_files');
-    console.log('[USB] Кэш при монтировании:', cached ? 'есть' : 'нет');
-    if (cached && isMounted) {
-      console.log('[USB] Загружено из кэша:', cached.photo.length + cached.video.length + cached.audio.length, 'файлов');
-      setUsbFiles(cached);
+    if (!cached && !isLoadedRef.current) {
+      setShowLoading(true);
+      setLoadingText('ЗАГРУЗКА USB...');
     }
 
-    // Загружаем из Supabase ТОЛЬКО если кэш пустой
-    if (!cached) {
-      console.log('[USB] Кэш пустой, загружаем из Supabase...');
-      supabase
-        .from('usb_files')
-        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
-        .order('created_at', { ascending: true })
-        .then(({ data, error }) => {
-          if (error) {
-            console.error('[USB] Ошибка загрузки:', error);
-            return;
-          }
-          if (!isMounted || !data) return;
-
-          const next: USBFiles = { photo: [], video: [], audio: [] };
-          for (const row of data) {
-            const type = row.type as 'photo' | 'video' | 'audio';
-            next[type].push({
-              id: row.id as string,
-              url: row.url as string,
-              name: row.name as string,
-              createdAt: (row.created_at_label as string) ?? '',
-              is_protected: (row.is_protected as boolean) ?? false,
-              password_hash: (row.password_hash as string) ?? null,
-              protected_hint: (row.protected_hint as string) ?? null,
-            });
-          }
-          setUsbFiles(next);
-          CacheManager.set('usb_files', next, CACHE_TTL);
-          console.log('[USB] Загружено из Supabase:', next.photo.length + next.video.length + next.audio.length, 'файлов');
-        });
-    }
+    // Загружаем из Supabase асинхронно
+    loadUSBFilesFromSupabase().then(next => {
+      if (!isMounted) return;
+      setUsbFiles(next);
+      CacheManager.set('usb_files', next, CACHE_TTL);
+      setShowLoading(false);
+      isLoadedRef.current = true;
+    });
 
     // Realtime — обновляет данные ТОЛЬКО при изменениях в БД
-    const debouncedLoad = debounce(() => {
-      console.log('[USB] Realtime сработал...');
-      supabase
-        .from('usb_files')
-        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
-        .order('created_at', { ascending: true })
-        .then(({ data, error }) => {
-          if (error || !isMounted || !data) return;
-          const next: USBFiles = { photo: [], video: [], audio: [] };
-          for (const row of data) {
-            const type = row.type as 'photo' | 'video' | 'audio';
-            next[type].push({
-              id: row.id as string,
-              url: row.url as string,
-              name: row.name as string,
-              createdAt: (row.created_at_label as string) ?? '',
-              is_protected: (row.is_protected as boolean) ?? false,
-              password_hash: (row.password_hash as string) ?? null,
-              protected_hint: (row.protected_hint as string) ?? null,
-            });
-          }
-          setUsbFiles(next);
-          CacheManager.set('usb_files', next, CACHE_TTL);
-        });
-    }, 500);
-    const channel = supabase
-      .channel('usb_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'usb_files' },
-        debouncedLoad
-      )
-      .subscribe();
+    const debouncedLoad = debounce(async () => {
+      const next = await loadUSBFilesFromSupabase();
+      if (isMounted) {
+        setUsbFiles(next);
+        CacheManager.set('usb_files', next, CACHE_TTL);
+      }
+    }, 800);
+
+    if (supabase) {
+      channelRef.current = supabase
+        .channel('usb_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'usb_files' },
+          debouncedLoad
+        )
+        .subscribe();
+    }
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isOpen) {
-      playStartSound();
-      // Показываем спиннер только если нет кэша
-      const cached = CacheManager.get<USBFiles>('usb_files');
-      if (!cached) {
-        setShowLoading(true);
-        setLoadingText('ЗАГРУЗКА USB...');
-        setTimeout(() => {
-          setShowLoading(false);
-        }, 600);
+      if (channelRef.current) {
+        supabase?.removeChannel(channelRef.current);
       }
-    }
-  }, [isOpen]);
+    };
+  }, [isOpen, loadUSBFilesFromSupabase]);
 
   const detectFileType = (url: string): 'photo' | 'video' | 'audio' => {
     const lower = url.toLowerCase();
