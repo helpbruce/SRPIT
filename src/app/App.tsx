@@ -36,6 +36,15 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState(false);
 
+  // Admin status from PDA login
+  const [isAdmin, setIsAdmin] = useState(() => {
+    try {
+      return localStorage.getItem('pda_user_role') === 'admin';
+    } catch {
+      return false;
+    }
+  });
+
   // Discord verification gate
   const [discordChecking, setDiscordChecking] = useState(true);
   const [discordVerified, setDiscordVerified] = useState(false);

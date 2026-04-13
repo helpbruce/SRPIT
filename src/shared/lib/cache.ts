@@ -17,9 +17,9 @@ export class CacheManager {
       };
       localStorage.setItem(this.prefix + key, JSON.stringify(item));
     } catch (e: any) {
-      // Quota exceeded — очищаем старые кеши и пробуем снова
+      // Quota exceeded — очищаем самые старые кеши и пробуем снова
       try {
-        this.clearAll();
+        this.clearOldest(3);
         const item = { data, timestamp: Date.now(), ttl };
         localStorage.setItem(this.prefix + key, JSON.stringify(item));
       } catch (e2) {
@@ -67,6 +67,29 @@ export class CacheManager {
       });
     } catch (e) {
       console.warn('Failed to clear all cache:', e);
+    }
+  }
+
+  static clearOldest(count: number): void {
+    try {
+      const keys = Object.keys(localStorage)
+        .filter(key => key.startsWith(this.prefix))
+        .map(key => {
+          try {
+            const item = JSON.parse(localStorage.getItem(key) || '');
+            return { key, timestamp: item.timestamp || 0 };
+          } catch {
+            return { key, timestamp: 0 };
+          }
+        })
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(0, count);
+
+      keys.forEach(({ key }) => {
+        localStorage.removeItem(key);
+      });
+    } catch (e) {
+      console.warn('Failed to clear oldest cache:', e);
     }
   }
 }

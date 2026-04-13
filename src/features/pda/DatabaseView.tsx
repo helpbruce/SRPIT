@@ -294,49 +294,6 @@ export function DatabaseView({
     setEditTasksExpanded(false);
   };
 
-  const saveNewTask = async () => {
-    if (!supabase || !selectedCharacter) return;
-    if (!taskInput.description.trim()) {
-      alert('Опиши задачу перед сохранением');
-      return;
-    }
-
-    const now = new Date().toISOString();
-    const newTask: Task = {
-      id: crypto.randomUUID(),
-      description: taskInput.description.trim(),
-      status: 'в работе',
-      reward: taskInput.reward.trim(),
-      timeLimit: taskInput.timeLimit.trim(),
-      author_login: currentLogin || 'Аноним',
-      created_at: now,
-    };
-    const updatedTasks = [...(selectedCharacter.tasks || []), newTask];
-    const updatedCharacter = { ...selectedCharacter, tasks: updatedTasks };
-
-    setSelectedCharacter(updatedCharacter);
-    const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updatedCharacter : c);
-    setCharacters(updatedChars);
-    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
-    CacheManager.set(cacheKey, updatedChars, CACHE_TTL);
-
-    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
-    const { error } = await supabase.from(tableName).update({ tasks: updatedTasks }).eq('id', selectedCharacter.id);
-    if (error) {
-      console.error(`Failed to update ${tableName} tasks:`, error);
-    }
-
-    // Формируем текст для записи с информацией о создателе
-    const day = String(new Date(now).getDate()).padStart(2, '0');
-    const month = String(new Date(now).getMonth() + 1).padStart(2, '0');
-    const hours = String(new Date(now).getHours()).padStart(2, '0');
-    const minutes = String(new Date(now).getMinutes()).padStart(2, '0');
-    const taskInfo = `[ ${day}.${month}.2009 | ${hours}:${minutes} (UTC+3:00) | ${currentLogin || 'Аноним'} ]\nЗадача: ${newTask.description}${newTask.timeLimit ? ` | Время: ${newTask.timeLimit}` : ''}${newTask.reward ? ` | Награда: ${newTask.reward}` : ''}`;
-    addEntry(taskInfo, 'task', false, newTask.id);
-    setTaskInput({ description: '', reward: '', timeLimit: '' });
-    setDetailSection('entries');
-  };
-
   // ===== INLINE EDIT FUNCTIONS FOR DETAIL VIEW =====
   const startDetailEdit = () => {
     playAllSound();
