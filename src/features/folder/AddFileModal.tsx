@@ -30,6 +30,7 @@ function getFileType(file: File): 'image' | 'video' | 'audio' | 'other' {
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('video/')) return 'video';
   if (file.type.startsWith('audio/')) return 'audio';
+  if (file.type === 'application/pdf') return 'other';
   return 'other';
 }
 
@@ -468,7 +469,7 @@ export function AddFileModal({ isOpen, onClose, onAdd }: AddFileModalProps) {
             onChange={handleFileChange}
             multiple
             className="hidden"
-            accept="image/*,video/*,audio/*"
+            accept="image/*,video/*,audio/*,application/pdf"
           />
         </div>
 

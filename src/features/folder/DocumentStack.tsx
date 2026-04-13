@@ -1,14 +1,29 @@
 import { Trash2 } from 'lucide-react';
-import React, { 
-  useState, 
-  useEffect, 
-  useCallback, 
-  useRef 
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef
 } from "react";
 
 interface Page {
   id: string;
   url: string;
+}
+
+// Определяем тип документа по URL
+function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
+  const lower = url.toLowerCase();
+  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com/file/d/')) {
+    return 'pdf';
+  }
+  if (lower.match(/\.(mp4|webm|mov|avi|mkv)$/i) || lower.startsWith('data:video')) {
+    return 'video';
+  }
+  if (lower.match(/\.(mp3|wav|ogg|flac|aac)$/i) || lower.startsWith('data:audio')) {
+    return 'audio';
+  }
+  return 'image';
 }
 
 interface DocumentStackProps {
@@ -223,13 +238,22 @@ export function DocumentStack({
             onMouseDown={(e) => handleMouseDown(e, index)}
             onClick={() => openFullscreen(index)}
           >
-            <img 
-              src={page.url} 
-              alt=""
-              className="w-full h-full object-contain pointer-events-none"
-              draggable={false}
-              style={{ background: 'transparent' }}
-            />
+            {getDocType(page.url) === 'pdf' ? (
+              <iframe
+                src={page.url}
+                className="w-full h-full pointer-events-none border-0"
+                title={`doc-${index}`}
+                style={{ background: 'white' }}
+              />
+            ) : (
+              <img
+                src={page.url}
+                alt=""
+                className="w-full h-full object-contain pointer-events-none"
+                draggable={false}
+                style={{ background: 'transparent' }}
+              />
+            )}
           </div>
         ))}
       </div>

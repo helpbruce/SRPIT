@@ -16,6 +16,21 @@ import { verifyDiscordMembership, isDiscordConfigured } from '../features/pda/di
 // TTL для кэша: 24 часа
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 
+// Определяем тип документа по URL
+function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
+  const lower = url.toLowerCase();
+  if (lower.includes('.pdf') || lower.startsWith('data:application/pdf') || lower.includes('drive.google.com/file/d/')) {
+    return 'pdf';
+  }
+  if (lower.match(/\.(mp4|webm|mov|avi|mkv)$/i) || lower.startsWith('data:video')) {
+    return 'video';
+  }
+  if (lower.match(/\.(mp3|wav|ogg|flac|aac)$/i) || lower.startsWith('data:audio')) {
+    return 'audio';
+  }
+  return 'image';
+}
+
 interface Document {
   url: string;
   id: string;
@@ -683,13 +698,22 @@ export default function App() {
           )}
 
           <div className="w-full h-full p-8 flex flex-col items-center justify-center">
-            <img 
-              src={documents[fullscreenIndex].url} 
-              className="max-w-full max-h-full object-contain pointer-events-none"
-              alt=""
-              loading="eager"
-              decoding="async"
-            />
+            {getDocType(documents[fullscreenIndex].url) === 'pdf' ? (
+              <iframe
+                src={documents[fullscreenIndex].url}
+                className="w-full h-full border-0"
+                title={`doc-${fullscreenIndex}`}
+                style={{ background: 'white', maxWidth: '90vw', maxHeight: '90vh' }}
+              />
+            ) : (
+              <img
+                src={documents[fullscreenIndex].url}
+                className="max-w-full max-h-full object-contain pointer-events-none"
+                alt=""
+                loading="eager"
+                decoding="async"
+              />
+            )}
           </div>
 
           <button
