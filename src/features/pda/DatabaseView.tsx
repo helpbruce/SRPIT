@@ -402,7 +402,7 @@ export function DatabaseView({
     return (
       <div className={`flex-1 flex flex-col overflow-hidden ${bgColor}`}>
         <div className={`p-3 border-b ${borderColor} flex-shrink-0 flex items-center justify-between`}>
-          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+          <button onClick={() => { playAllSound(); setSelectedCharacter(null); setEntries([]); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
             <ChevronLeft className="w-4 h-4" /> НАЗАД
           </button>
           <div className="flex gap-2">
@@ -469,8 +469,7 @@ export function DatabaseView({
                     {/* Hover: full metadata */}
                     <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                       <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
-                        {entry.author_login} • {formatEntryDate(entry.created_at).split(' | ')[1]}
-                        {entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
+                        {formatEntryDate(entry.created_at)}{entry.author_login}]{entry.is_update && <span className={`${isSecret ? 'text-yellow-600' : 'text-yellow-500'}`}> [UPD]</span>}
                       </span>
                     </div>
                     {/* Message bubble */}
@@ -507,7 +506,7 @@ export function DatabaseView({
         {/* АБД/БД toggle — только если есть доступ */}
         {canAccessAbd && (
           <button
-            onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); }}
+            onClick={() => { playAllSound(); setActiveDatabase(activeDatabase === 'main' ? 'secret' : 'main'); setSearchQuery(''); setSelectedCharacter(null); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
             className={`px-2 py-1 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
           >
             {isSecret ? 'АБД' : 'БД'}
@@ -555,7 +554,7 @@ export function DatabaseView({
               <div
                 key={char.id}
                 className={`p-3 border cursor-pointer transition-all rounded flex flex-col gap-2 relative ${char.status === 'В розыске' ? cardWanted : cardBg}`}
-                onClick={() => { playAllSound(); setSelectedCharacter(char); }}
+                onClick={() => { playAllSound(); setSelectedCharacter(char); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
               >
                 <div className="flex gap-3">
                   <div className="flex-shrink-0 relative">
@@ -601,7 +600,7 @@ export function DatabaseView({
               <div
                 key={char.id}
                 className={`p-2.5 border cursor-pointer transition-all rounded flex items-center gap-3 ${char.status === 'В розыске' ? cardWanted : cardBg}`}
-                onClick={() => { playAllSound(); setSelectedCharacter(char); }}
+                onClick={() => { playAllSound(); setSelectedCharacter(char); setViewTasksExpanded(false); setViewFullInfoExpanded(false); }}
               >
                 <div className="flex-1 min-w-0">
                   <div className={`${textLight} font-mono text-sm font-bold truncate`}>
