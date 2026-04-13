@@ -94,7 +94,7 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
 
   // Check if Discord verification is required on mount
   useEffect(() => {
-    isDiscordVerificationRequired().then(setDiscordRequired);
+    setDiscordRequired(isDiscordVerificationRequired());
   }, []);
 
   const [newSectionName, setNewSectionName] = useState('');

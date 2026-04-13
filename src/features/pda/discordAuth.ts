@@ -60,24 +60,10 @@ export function getDiscordUserId(): Promise<DiscordUser | null> {
   });
 }
 
-// Проверка: требуется ли Discord верификация (через API endpoint)
-let _discordRequired: boolean | null = null;
-
-export async function isDiscordVerificationRequired(): Promise<boolean> {
-  if (_discordRequired !== null) return _discordRequired;
-  
-  try {
-    // Делаем HEAD запрос к API — если Discord настроен, ответ будет 200 или 500
-    // Если не настроен — 500 с ошибкой "credentials not configured"
-    const response = await fetch('/api/discord-verify', { method: 'HEAD' });
-    // Если API существует (не 404) и возвращает ошибку "not configured" (500) — Discord не настроен
-    // Если возвращает 200 или 405 — Discord настроен
-    _discordRequired = response.status === 200 || response.status === 405;
-  } catch {
-    _discordRequired = false;
-  }
-  
-  return _discordRequired;
+// Проверка: требуется ли Discord верификация
+// Фронтенд читает переменную VITE_DISCORD_REQUIRED напрямую
+export function isDiscordVerificationRequired(): boolean {
+  return import.meta.env.VITE_DISCORD_REQUIRED === 'true';
 }
 
 // Проверка членства пользователя в Discord сервере
