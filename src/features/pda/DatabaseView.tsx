@@ -99,7 +99,6 @@ export function DatabaseView({
   playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
   photo1InputRef, getTaskPlaceholder, addTask, updateTask, deleteTask,
 }: DatabaseViewProps) {
-}: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
   const [entries, setEntries] = useState<CharacterEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
