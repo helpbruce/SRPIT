@@ -1,6 +1,10 @@
-// Discord API helper functions
+// Discord OAuth2 verification - полностью на фронтенде
+// Пользователь авторизуется через Discord popup, проверяем членство в сервере
 
 const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined;
+const DISCORD_SERVER_ID = import.meta.env.VITE_DISCORD_SERVER_ID as string | undefined;
+
+const REDIRECT_URI = window.location.origin + '/discord-callback.html';
 
 export interface DiscordUser {
   id: string;
@@ -9,8 +13,8 @@ export interface DiscordUser {
   avatar: string | null;
 }
 
-// Получение Discord user ID через OAuth2 popup flow
-export function getDiscordUserId(): Promise<DiscordUser | null> {
+// Открывает Discord OAuth popup и возвращает access token
+function openDiscordAuth(): Promise<string | null> {
   return new Promise((resolve) => {
     if (!DISCORD_CLIENT_ID) {
       console.warn('DISCORD_CLIENT_ID not configured');
@@ -18,20 +22,15 @@ export function getDiscordUserId(): Promise<DiscordUser | null> {
       return;
     }
 
-    const redirectUri = window.location.origin + '/discord-callback.html';
     const scope = 'identify guilds';
-    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}`;
+    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(scope)}`;
 
     const width = 500;
     const height = 600;
     const left = window.screenX + (window.innerWidth - width) / 2;
     const top = window.screenY + (window.innerHeight - height) / 2;
 
-    const popup = window.open(
-      authUrl,
-      'discord-auth',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+    const popup = window.open(authUrl, 'discord-auth', `width=${width},height=${height},left=${left},top=${top}`);
 
     if (!popup) {
       alert('Разрешите всплывающие окна для Discord авторизации');
@@ -46,44 +45,60 @@ export function getDiscordUserId(): Promise<DiscordUser | null> {
       }
     }, 500);
 
-    // Слушаем message от popup
     const handler = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'discord-auth-success') {
         clearInterval(checkClosed);
         window.removeEventListener('message', handler);
         popup.close();
-        resolve(event.data.user as DiscordUser);
+        resolve(event.data.accessToken as string);
       }
     };
     window.addEventListener('message', handler);
   });
 }
 
-// Проверка: требуется ли Discord верификация
-// Фронтенд читает переменную VITE_DISCORD_REQUIRED напрямую
-export function isDiscordVerificationRequired(): boolean {
-  return import.meta.env.VITE_DISCORD_REQUIRED === 'true';
-}
-
-// Проверка членства пользователя в Discord сервере
-export async function checkDiscordMembership(userId: string): Promise<{ isMember: boolean; user?: any }> {
+// Проверяет членство пользователя в сервере через Discord API
+async function checkGuildMembership(accessToken: string): Promise<boolean> {
   try {
-    const response = await fetch('/api/discord-verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ discordId: userId }),
+    const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      console.error('Discord verification failed:', response.status, errorText);
-      return { isMember: false };
-    }
+    if (!response.ok) return false;
 
-    return await response.json();
-  } catch (error) {
-    console.error('Failed to check Discord membership:', error);
-    return { isMember: false };
+    const guilds = await response.json();
+    return guilds.some((g: any) => g.id === DISCORD_SERVER_ID);
+  } catch {
+    return false;
   }
+}
+
+// Главная функция: открывает Discord OAuth и проверяет членство
+export async function verifyDiscordMembership(): Promise<{ success: boolean; user?: DiscordUser }> {
+  const accessToken = await openDiscordAuth();
+  if (!accessToken) return { success: false };
+
+  const isMember = await checkGuildMembership(accessToken);
+  if (!isMember) return { success: false };
+
+  // Получаем инфо о пользователе
+  try {
+    const response = await fetch('https://discord.com/api/v10/users/@me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (response.ok) {
+      const user = await response.json();
+      return { success: true, user };
+    }
+  } catch {
+    // ignore
+  }
+
+  return { success: true };
+}
+
+// Проверяет, настроен ли Discord (есть ли Client ID и Server ID)
+export function isDiscordConfigured(): boolean {
+  return !!(DISCORD_CLIENT_ID && DISCORD_SERVER_ID);
 }

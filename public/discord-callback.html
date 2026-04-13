@@ -7,28 +7,15 @@
 <body>
   <p>Авторизация Discord...</p>
   <script>
-    // Получаем access_token из hash URL
     const hash = window.location.hash.substring(1);
     const params = new URLSearchParams(hash);
     const accessToken = params.get('access_token');
 
     if (accessToken) {
-      // Получаем информацию о пользователе
-      fetch('https://discord.com/api/v10/users/@me', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      })
-        .then(res => res.json())
-        .then(user => {
-          // Отправляем данные родительному окну
-          window.opener.postMessage({
-            type: 'discord-auth-success',
-            user: user
-          }, window.location.origin);
-        })
-        .catch(err => {
-          console.error('Failed to get Discord user:', err);
-          window.close();
-        });
+      window.opener.postMessage({
+        type: 'discord-auth-success',
+        accessToken: accessToken
+      }, window.location.origin);
     } else {
       window.close();
     }

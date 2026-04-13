@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Component, ReactNode } from 'react';
 import { X, Database, BookOpen, Lock, Search, Plus, ChevronLeft, Edit2, Save, Calendar, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
-import { checkDiscordMembership, isDiscordVerificationRequired } from './discordAuth';
+import { verifyDiscordMembership, isDiscordConfigured } from './discordAuth';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce } from '../../shared/lib/realtimeUtils';
 import { DatabaseView } from './DatabaseView';
@@ -86,15 +86,28 @@ export function PDAModal({ isOpen, onClose, isMuted }: PDAModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
-  // Discord verification
-  const [discordChecking, setDiscordChecking] = useState(false);
-  const [discordVerified, setDiscordVerified] = useState<boolean | null>(null);
-  const [discordId, setDiscordId] = useState('');
-  const [discordRequired, setDiscordRequired] = useState(false);
+  // Discord verification — automatic on site entry
+  const [discordVerified, setDiscordVerified] = useState(false);
+  const [discordChecking, setDiscordChecking] = useState(true);
+  const [discordError, setDiscordError] = useState(false);
 
-  // Check if Discord verification is required on mount
+  // Check Discord membership on mount
   useEffect(() => {
-    setDiscordRequired(isDiscordVerificationRequired());
+    if (!isDiscordConfigured()) {
+      // Discord not configured — skip verification
+      setDiscordChecking(false);
+      setDiscordVerified(true);
+      return;
+    }
+    // Auto-verify Discord membership
+    verifyDiscordMembership().then((result) => {
+      setDiscordChecking(false);
+      if (result.success) {
+        setDiscordVerified(true);
+      } else {
+        setDiscordError(true);
+      }
+    });
   }, []);
 
   const [newSectionName, setNewSectionName] = useState('');
@@ -808,29 +821,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       return;
     }
 
-    // Проверяем Discord membership если сервер настроен
-    if (discordRequired && !discordVerified) {
-      if (!discordId.trim()) {
-        alert('Для входа требуется указать Discord ID');
-        return;
-      }
-      setDiscordChecking(true);
-      try {
-        const result = await checkDiscordMembership(discordId.trim());
-        if (!result.isMember) {
-          alert('Вы не состоите в требуемом Discord сервере');
-          setDiscordChecking(false);
-          return;
-        }
-        setDiscordVerified(true);
-      } catch {
-        alert('Ошибка проверки Discord');
-        setDiscordChecking(false);
-        return;
-      }
-      setDiscordChecking(false);
-    }
-
     // Пытаемся забрать can_access_abd, но если колонки нет — фоллбэк
     let hasAbd = false;
     try {
@@ -930,6 +920,36 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   if (!isOpen) return null;
+
+  // Discord verification gate — blocks entire site
+  if (isDiscordConfigured() && discordChecking) {
+    return (
+      <div className="fixed inset-0 z-[100020] flex items-center justify-center bg-black/80">
+        <div className="w-[min(90vw,400px)] bg-[#1a1a1a] border-2 border-[#3a3a3a] rounded p-6 text-center">
+          <div className="text-gray-300 font-mono text-sm mb-4">Проверка Discord...</div>
+          <div className="w-8 h-8 border-2 border-gray-500 border-t-gray-300 rounded-full animate-spin mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDiscordConfigured() && discordError) {
+    return (
+      <div className="fixed inset-0 z-[100020] flex items-center justify-center bg-black/80">
+        <div className="w-[min(90vw,400px)] bg-[#1a1a1a] border-2 border-red-800 rounded p-6 text-center">
+          <div className="text-red-400 font-mono text-sm mb-2">ДОСТУП ЗАПРЕЩЁН</div>
+          <div className="text-gray-500 font-mono text-xs mb-4">Вы не состоите в требуемом Discord сервере</div>
+          <button
+            onClick={() => { setDiscordError(false); setDiscordChecking(true); verifyDiscordMembership().then(r => { setDiscordChecking(false); if (r.success) setDiscordVerified(true); else setDiscordError(true); }); }}
+            className="px-4 py-2 bg-[#2a2a2a] border border-[#3a3a3a] rounded text-gray-400 font-mono text-xs hover:bg-[#3a3a3a]"
+          >
+            ПОПРОБОВАТЬ СНОВА
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (showAuthModal) {
     return (
       <>
@@ -939,15 +959,6 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
             {authMode === 'login' ? 'ВХОД В PDA' : 'РЕГИСТРАЦИЯ В PDA'}
             </div>
             <div className="space-y-2">
-            {discordRequired && authMode === 'login' && !discordVerified && (
-              <input
-                type="text"
-                placeholder="Discord ID (для проверки)"
-                value={discordId}
-                onChange={(e) => setDiscordId(e.target.value)}
-                className="w-full p-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded text-gray-300 font-mono text-xs focus:border-[#3a3a3a] focus:outline-none placeholder:text-gray-700"
-              />
-            )}
             <input
             type="text"
             placeholder="Логин"
