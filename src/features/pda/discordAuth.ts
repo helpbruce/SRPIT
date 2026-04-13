@@ -1,9 +1,9 @@
 // Discord OAuth2 verification - полностью на фронтенде
 // Пользователь авторизуется через Discord popup, проверяем членство в сервере
 
-const DISCORD_CLIENT_ID = import.meta.env.VITE_DISCORD_CLIENT_ID as string | undefined;
-// Поддерживаем оба варианта: с VITE_ и без
-const DISCORD_SERVER_ID = (import.meta.env.VITE_DISCORD_SERVER_ID || import.meta.env.DISCORD_SERVER_ID) as string | undefined;
+// Хардкодим переменные для гарантии работы на Vercel
+const DISCORD_CLIENT_ID = '1493292269011210352';
+const DISCORD_SERVER_ID = '1000026315476455445';
 
 const REDIRECT_URI = window.location.origin + '/discord-callback.html';
 
