@@ -158,14 +158,14 @@ export function DatabaseView({
       id: editForm.id,
       photo: editForm.photo || '',
       name: editForm.name || '',
-      birth_date: editForm.birthDate || null,
+      birthdate: editForm.birthDate || null,
       faction: editForm.faction || null,
       rank: editForm.rank || null,
       status: editForm.status || 'Неизвестен',
-      short_info: editForm.shortInfo || null,
-      full_info: editForm.fullInfo || null,
+      shortinfo: editForm.shortInfo || null,
+      fullinfo: editForm.fullInfo || null,
       notes: editForm.notes || null,
-      case_number: editForm.caseNumber || null,
+      casenumber: editForm.caseNumber || null,
       updated_at: new Date().toISOString(),
     };
 
