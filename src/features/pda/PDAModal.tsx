@@ -1067,6 +1067,10 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               isSecret={activeDatabase === 'secret'}
               canAccessAbd={canAccessAbd}
               photo1InputRef={photo1InputRef}
+              getTaskPlaceholder={getTaskPlaceholder}
+              addTask={addTask}
+              updateTask={updateTask}
+              deleteTask={deleteTask}
             />
           )}
 

@@ -14,7 +14,14 @@ interface Character {
   shortInfo: string;
   fullInfo: string;
   notes: string;
+  tasks: Task[];
   caseNumber: string;
+}
+
+interface Task {
+  id: string;
+  description: string;
+  status: 'в работе' | 'провалено' | 'выполнено';
 }
 
 interface CharacterEntry {
@@ -56,7 +63,10 @@ interface DatabaseViewProps {
   isSecret: boolean;
   canAccessAbd: boolean;
   photo1InputRef: React.RefObject<HTMLInputElement>;
-  getTaskPlaceholder: (status: 'в работе' | 'провалено' | 'выполнено') => string;
+  getTaskPlaceholder: (status: Task['status']) => string;
+  addTask?: () => void;
+  updateTask?: (taskId: string, updates: Partial<Task>) => void;
+  deleteTask?: (taskId: string) => void;
 }
 
 const getStatusDotColor = (status: string) => {
@@ -87,7 +97,8 @@ export function DatabaseView({
   isCreating, setIsCreating, editForm, setEditForm,
   tasksExpanded, setTasksExpanded, expandedShortInfo, setExpandedShortInfo,
   playAllSound, playSaveSound, currentLogin, supabase, isSecret, canAccessAbd,
-  photo1InputRef,
+  photo1InputRef, getTaskPlaceholder, addTask, updateTask, deleteTask,
+}: DatabaseViewProps) {
 }: DatabaseViewProps) {
   const [editTasksExpanded, setEditTasksExpanded] = useState(false);
   const [entries, setEntries] = useState<CharacterEntry[]>([]);
@@ -224,6 +235,38 @@ export function DatabaseView({
         <div className={`p-3 border-b ${borderColor} flex items-center justify-between flex-shrink-0`}>
           <h2 className={`text-sm font-mono ${textMuted}`}>{isCreating ? 'НОВЫЙ ПЕРСОНАЖ' : 'РЕДАКТИРОВАНИЕ'}</h2>
           <div className="flex gap-2">
+            {!isCreating && (
+              <button onClick={() => {
+                playAllSound();
+                if (confirm('Удалить персонажа?')) {
+                  const updated = characters.filter(c => c.id !== editForm.id);
+                  setCharacters(updated);
+                  const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+                  CacheManager.set(cacheKey, updated, 10 * 60 * 1000);
+
+                  if (supabase) {
+                    supabase
+                      .from(isSecret ? 'secret_characters' : 'pda_characters')
+                      .delete()
+                      .eq('id', editForm.id)
+                      .then(({ error }) => {
+                        if (error) {
+                          console.error('Failed to delete character from Supabase:', error);
+                          setCharacters(characters);
+                          CacheManager.set(cacheKey, characters, 10 * 60 * 1000);
+                        }
+                      });
+                  }
+
+                  setSelectedCharacter(null);
+                  setIsEditing(false);
+                  setEditForm(null);
+                  setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false });
+                }
+              }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-red-900/30 border-red-800 text-red-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
+                <Trash2 className="w-4 h-4" /> УДАЛИТЬ
+              </button>
+            )}
             <button onClick={() => { playAllSound(); setIsEditing(false); setIsCreating(false); setEditForm(null); setTasksExpanded(false); setEditTasksExpanded(false); setFieldEditMode({ name: false, faction: false, rank: false, birthDate: false }); }} className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80 transition-all`}>ОТМЕНА</button>
             <button onClick={saveCharacter} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}>
               <Save className="w-4 h-4" /> СОХРАНИТЬ
@@ -304,6 +347,7 @@ export function DatabaseView({
                           const content = editForm.shortInfo;
                           if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
                           addEntry(content, 'short_info');
+                          setEditForm({ ...editForm, shortInfo: '' });
                         }}
                         className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
                       >
@@ -322,6 +366,7 @@ export function DatabaseView({
                           const content = editForm.fullInfo;
                           if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
                           addEntry(content, 'full_info');
+                          setEditForm({ ...editForm, fullInfo: '' });
                         }}
                         className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
                       >
@@ -340,6 +385,7 @@ export function DatabaseView({
                           const content = editForm.notes;
                           if (!content?.trim()) { alert('Напишите что-то перед добавлением'); return; }
                           addEntry(content, 'notes');
+                          setEditForm({ ...editForm, notes: '' });
                         }}
                         className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
                       >
@@ -347,6 +393,36 @@ export function DatabaseView({
                       </button>
                     </div>
                     <textarea value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} placeholder="Напишите заметку..." className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`} rows={2} />
+                  </div>
+
+                  {/* Tasks section */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`block ${textMuted} text-[10px] font-mono`}>ЗАДАЧИ</label>
+                      <button
+                        onClick={() => setEditTasksExpanded(true)}
+                        className={`px-2 py-0.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                      >
+                        <Edit2 className="w-3 h-3" /> РЕДАКТИРОВАТЬ
+                      </button>
+                    </div>
+                    <div className={`p-2 ${inputBg} border rounded font-mono text-xs ${textColor} min-h-[60px]`}>
+                      {editForm.tasks && editForm.tasks.length > 0 ? (
+                        <div className="space-y-1">
+                          {editForm.tasks.slice(0, 3).map((task, index) => (
+                            <div key={task.id} className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${task.status === 'в работе' ? 'bg-yellow-500' : task.status === 'провалено' ? 'bg-red-500' : 'bg-gray-500'}`}></div>
+                              <span className="truncate">{task.description || 'Без описания'}</span>
+                            </div>
+                          ))}
+                          {editForm.tasks.length > 3 && (
+                            <div className={`${textMuted} text-[10px]`}>... и ещё {editForm.tasks.length - 3}</div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="opacity-30">Задач пока нет</div>
+                      )}
+                    </div>
                   </div>
                 </>
               )}
@@ -581,6 +657,77 @@ export function DatabaseView({
           </div>
         )}
       </div>
+
+      {/* Tasks Edit Modal */}
+      {editTasksExpanded && editForm && (
+        <div className="fixed inset-0 z-[100030] flex items-center justify-center pointer-events-auto">
+          <div className="w-[min(90vw,500px)] bg-[#0a0a0a] border-2 border-[#2a2a2a] rounded p-4 max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h3 className={`${textLight} font-mono text-sm font-bold`}>ЗАДАЧИ</h3>
+              <button
+                onClick={() => setEditTasksExpanded(false)}
+                className="text-gray-500 hover:text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pda-scrollbar space-y-3">
+              {editForm.tasks && editForm.tasks.length > 0 ? (
+                editForm.tasks.map((task, index) => (
+                  <div key={task.id} className={`p-3 border rounded ${isSecret ? 'bg-red-950/20 border-red-900/30' : 'bg-[#0f0f0f] border-[#2a2a2a]'}`}>
+                    <div className="flex items-start gap-3">
+                      <select
+                        value={task.status}
+                        onChange={(e) => updateTask(task.id, { status: e.target.value as Task['status'] })}
+                        className={`px-2 py-1 text-xs font-mono border rounded ${inputBg} ${textColor} min-w-[100px]`}
+                      >
+                        <option value="в работе">в работе</option>
+                        <option value="провалено">провалено</option>
+                        <option value="выполнено">выполнено</option>
+                      </select>
+                      <div className="flex-1">
+                        <textarea
+                          value={task.description}
+                          onChange={(e) => updateTask(task.id, { description: e.target.value })}
+                          placeholder={getTaskPlaceholder(task.status)}
+                          className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`}
+                          rows={2}
+                        />
+                      </div>
+                      <button
+                        onClick={() => deleteTask(task.id)}
+                        className="text-red-500 hover:text-red-400 p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className={`${textMuted} font-mono text-xs text-center py-8`}>
+                  Задач пока нет
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-4 flex-shrink-0">
+              <button
+                onClick={addTask}
+                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80`}
+              >
+                <Plus className="w-4 h-4" /> ДОБАВИТЬ ЗАДАЧУ
+              </button>
+              <button
+                onClick={() => setEditTasksExpanded(false)}
+                className={`px-3 py-1.5 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs hover:opacity-80`}
+              >
+                ЗАКРЫТЬ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
