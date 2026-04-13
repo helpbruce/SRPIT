@@ -128,6 +128,9 @@ export function DatabaseView({
   // Notes edit state
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesText, setNotesText] = useState('');
+  // New task form state
+  const [showNewTaskForm, setShowNewTaskForm] = useState(false);
+  const [newTaskForm, setNewTaskForm] = useState({ description: '', reward: '', timeLimit: '' });
 
   const isEditableField = (field: 'name' | 'faction' | 'rank' | 'birthDate') =>
     isCreating || fieldEditMode[field];
@@ -171,12 +174,9 @@ export function DatabaseView({
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const day = String(now.getDate()).padStart(2, '0');
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const year = String(now.getFullYear());
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
-      setCurrentTimestamp(`${day}.${month}.${year} ${hours}:${minutes}`);
+      setCurrentTimestamp(`${hours}:${minutes}`);
     };
     updateTime();
     const interval = window.setInterval(updateTime, 30000);
@@ -371,6 +371,19 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ fullinfo: fullInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    // Log the change
+    if (fullInfoText !== selectedCharacter!.fullInfo && supabase) {
+      const logEntry: CharacterEntry = {
+        id: crypto.randomUUID(),
+        character_id: selectedCharacter!.id,
+        author_login: currentLogin || 'Аноним',
+        content: `[ПОЛНАЯ ИНФО ИЗМЕНЕНА]`,
+        entry_type: 'full_info',
+        is_update: true,
+        created_at: new Date().toISOString(),
+      };
+      await supabase.from(entriesTableName).insert(logEntry);
+    }
     setEditingFullInfo(false);
   };
 
@@ -384,6 +397,19 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ shortinfo: shortInfoText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    // Log the change
+    if (shortInfoText !== selectedCharacter!.shortInfo && supabase) {
+      const logEntry: CharacterEntry = {
+        id: crypto.randomUUID(),
+        character_id: selectedCharacter!.id,
+        author_login: currentLogin || 'Аноним',
+        content: `[КРАТКАЯ ИНФО ИЗМЕНЕНА]`,
+        entry_type: 'short_info',
+        is_update: true,
+        created_at: new Date().toISOString(),
+      };
+      await supabase.from(entriesTableName).insert(logEntry);
+    }
     setEditingShortInfo(false);
   };
 
@@ -397,6 +423,19 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ notes: notesText, updated_at: new Date().toISOString() }).eq('id', selectedCharacter!.id);
+    // Log the change
+    if (notesText !== selectedCharacter!.notes && supabase) {
+      const logEntry: CharacterEntry = {
+        id: crypto.randomUUID(),
+        character_id: selectedCharacter!.id,
+        author_login: currentLogin || 'Аноним',
+        content: `[ЗАМЕТКИ ИЗМЕНЕНЫ]`,
+        entry_type: 'notes',
+        is_update: true,
+        created_at: new Date().toISOString(),
+      };
+      await supabase.from(entriesTableName).insert(logEntry);
+    }
     setEditingNotes(false);
   };
 
@@ -425,7 +464,72 @@ export function DatabaseView({
     CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
     const tableName = isSecret ? 'secret_characters' : 'pda_characters';
     await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    // Log the task edit
+    const origTask = selectedCharacter.tasks.find(t => t.id === editingTask.id);
+    if (origTask && supabase) {
+      const changes: string[] = [];
+      if (editingTask.description !== origTask.description) changes.push(`Текст: ${editingTask.description}`);
+      if (editingTask.status !== origTask.status) changes.push(`Статус: ${editingTask.status}`);
+      if (editingTask.timeLimit !== (origTask.timeLimit || '')) changes.push(`Время: ${editingTask.timeLimit}`);
+      if (editingTask.reward !== (origTask.reward || '')) changes.push(`Награда: ${editingTask.reward}`);
+      if (changes.length > 0) {
+        const logEntry: CharacterEntry = {
+          id: crypto.randomUUID(),
+          character_id: selectedCharacter.id,
+          author_login: currentLogin || 'Аноним',
+          content: `[ЗАДАЧА ИЗМЕНЕНА] ${changes.join(' | ')}`,
+          entry_type: 'edit',
+          is_update: true,
+          created_at: new Date().toISOString(),
+        };
+        await supabase.from(entriesTableName).insert(logEntry);
+      }
+    }
     setEditingTask(null);
+  };
+
+  // Создать новую задачу
+  const createNewTask = async () => {
+    playSaveSound();
+    if (!newTaskForm.description.trim()) {
+      alert('Опиши задачу перед сохранением');
+      return;
+    }
+    if (!supabase || !selectedCharacter) return;
+    const task: Task = {
+      id: crypto.randomUUID(),
+      description: newTaskForm.description.trim(),
+      status: 'в работе',
+      reward: newTaskForm.reward.trim(),
+      timeLimit: newTaskForm.timeLimit.trim(),
+    };
+    const updatedTasks = [...(selectedCharacter.tasks || []), task];
+    const updated = { ...selectedCharacter, tasks: updatedTasks };
+    setSelectedCharacter(updated);
+    const updatedChars = characters.map(c => c.id === selectedCharacter.id ? updated : c);
+    setCharacters(updatedChars);
+    const cacheKey = isSecret ? 'secret_characters' : 'pda_characters';
+    CacheManager.set(cacheKey, updatedChars, 10 * 60 * 1000);
+    const tableName = isSecret ? 'secret_characters' : 'pda_characters';
+    await supabase.from(tableName).update({ tasks: updatedTasks, updated_at: new Date().toISOString() }).eq('id', selectedCharacter.id);
+    // Log the new task
+    const logEntry: CharacterEntry = {
+      id: crypto.randomUUID(),
+      character_id: selectedCharacter.id,
+      author_login: currentLogin || 'Аноним',
+      content: `Задача: ${task.description}${task.timeLimit ? ` | Время: ${task.timeLimit}` : ''}${task.reward ? ` | Награда: ${task.reward}` : ''}`,
+      entry_type: 'task',
+      is_update: false,
+      created_at: new Date().toISOString(),
+    };
+    await supabase.from(entriesTableName).insert(logEntry);
+    setNewTaskForm({ description: '', reward: '', timeLimit: '' });
+    setShowNewTaskForm(false);
+    // Reload entries
+    if (supabase) {
+      const { data } = await supabase.from(entriesTableName).select('*').eq('character_id', selectedCharacter.id).order('created_at', { ascending: true });
+      if (data) setEntries(data);
+    }
   };
 
   // ===== DETAIL VIEW (лента сообщений) =====
@@ -618,10 +722,7 @@ export function DatabaseView({
                 <button onClick={saveDetailEdit} className={`px-3 py-1.5 bg-green-900/30 border-green-800 text-green-400 border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><Save className="w-4 h-4" /> СОХРАНИТЬ</button>
               </>
             ) : (
-              <>
-                <button onClick={() => { playAllSound(); setDetailSection('tasks'); }} className={`px-3 py-1.5 ${detailSection === 'tasks' ? 'bg-yellow-700/40 border-yellow-600 text-yellow-200' : isSecret ? 'bg-yellow-900/30 border-yellow-800 text-yellow-400' : 'bg-yellow-700/30 border-yellow-600 text-yellow-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><CheckSquare className="w-4 h-4" /> ЗАДАЧИ</button>
-                <button onClick={startDetailEdit} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><Edit2 className="w-4 h-4" /> ИЗМЕНИТЬ</button>
-              </>
+              <button onClick={startDetailEdit} className={`px-3 py-1.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-xs flex items-center gap-1 hover:opacity-80 transition-all`}><Edit2 className="w-4 h-4" /> ИЗМЕНИТЬ</button>
             )}
           </div>
         </div>
@@ -778,12 +879,62 @@ export function DatabaseView({
               </div>
             )}
 
-            {/* Задачи — только список, hover показывает подсказку, dblclick редактирует */}
+            {/* Задачи — список с кнопкой добавить */}
             {detailSection === 'tasks' && (
               <div className="space-y-3">
-                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center gap-2`}>
-                  <CheckSquare className="w-3 h-3" /> ВЫДАННЫЕ ЗАДАЧИ
+                <div className={`${textMuted} font-mono text-[10px] mb-2 flex items-center justify-between`}>
+                  <div className="flex items-center gap-2"><CheckSquare className="w-3 h-3" /> ВЫДАННЫЕ ЗАДАЧИ</div>
+                  <button
+                    onClick={() => { playAllSound(); setShowNewTaskForm(!showNewTaskForm); }}
+                    className={`px-2 py-0.5 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-400' : 'bg-gray-700/30 border-gray-600 text-gray-300'} border rounded font-mono text-[10px] flex items-center gap-1`}
+                  >
+                    <Plus className="w-3 h-3" /> ДОБАВИТЬ
+                  </button>
                 </div>
+
+                {/* Форма новой задачи */}
+                {showNewTaskForm && (
+                  <div className={`space-y-3 p-4 border rounded ${inputBg}`}>
+                    <div>
+                      <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ЗАДАЧА</label>
+                      <textarea
+                        value={newTaskForm.description}
+                        onChange={(e) => setNewTaskForm({ ...newTaskForm, description: e.target.value })}
+                        placeholder="Описание задачи..."
+                        className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} resize-none placeholder:opacity-30`}
+                        rows={3}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>ВРЕМЯ НА ВЫПОЛНЕНИЕ</label>
+                        <input
+                          type="text"
+                          value={newTaskForm.timeLimit}
+                          onChange={(e) => setNewTaskForm({ ...newTaskForm, timeLimit: e.target.value })}
+                          placeholder="Срок выполнения"
+                          className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                        />
+                      </div>
+                      <div>
+                        <label className={`block ${textMuted} text-[10px] font-mono mb-1`}>НАГРАДА</label>
+                        <input
+                          type="text"
+                          value={newTaskForm.reward}
+                          onChange={(e) => setNewTaskForm({ ...newTaskForm, reward: e.target.value })}
+                          placeholder="Награда"
+                          className={`w-full p-2 ${inputBg} border rounded font-mono text-xs ${textColor} placeholder:opacity-30`}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={createNewTask} className={`px-4 py-2 ${isSecret ? 'bg-green-900/30 border-green-800 text-green-300' : 'bg-green-700/30 border-green-600 text-green-200'} border rounded font-mono text-xs flex items-center gap-1`}><Save className="w-3 h-3" /> СОХРАНИТЬ</button>
+                      <button onClick={() => { playAllSound(); setShowNewTaskForm(false); }} className={`px-4 py-2 ${isSecret ? 'bg-red-900/30 border-red-800 text-red-400' : 'bg-[#2a2a2a] border-[#3a3a3a] text-gray-400'} border rounded font-mono text-xs`}>ОТМЕНА</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Список задач */}
                 {selectedCharacter.tasks && selectedCharacter.tasks.length > 0 ? (
                   selectedCharacter.tasks.map(task => (
                     <div
@@ -795,7 +946,7 @@ export function DatabaseView({
                     >
                       <div className="absolute -top-5 left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                         <span className={`${isSecret ? 'text-red-700' : 'text-gray-600'} font-mono text-[9px] bg-black/80 px-2 py-1 rounded`}>
-                          Двойной клик — редактировать
+                          [Двойной клик — редактировать]
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mb-1">
@@ -989,7 +1140,14 @@ export function DatabaseView({
                     </div>
                   </div>
                   <div className="flex-1 min-w-0 flex flex-col">
-                    <div className={`${textLight} font-mono text-lg mb-1 truncate`}>{char.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className={`${textLight} font-mono text-lg truncate`}>{char.name}</div>
+                      {char.tasks && char.tasks.some(t => t.status === 'в работе') && (
+                        <span className="flex-shrink-0 px-1.5 py-0.5 bg-yellow-600/30 border border-yellow-600/50 rounded text-yellow-400 font-mono text-[9px]">
+                          ЗАДАЧА
+                        </span>
+                      )}
+                    </div>
                     <div className={`${textColor} font-mono text-base mb-0 truncate`}>{char.faction}</div>
                     <div className={`${textMuted} font-mono text-xs mb-3 truncate`}>{char.rank}</div>
                     <div className={`${textMuted} font-mono text-xs mb-1 truncate`}>{char.birthDate}</div>
@@ -1028,6 +1186,7 @@ export function DatabaseView({
                   <div className={`${textLight} font-mono text-sm font-bold truncate`}>
                     {char.name || 'Без имени'}
                     {char.status === 'В розыске' && <span className="text-red-500 ml-2 text-xs">[РОЗЫСК]</span>}
+                    {char.tasks && char.tasks.some(t => t.status === 'в работе') && <span className="ml-2 text-xs text-yellow-400">⚡</span>}
                   </div>
                   <div className={`${textMuted} font-mono text-[10px] truncate`}>
                     {char.faction}{char.rank ? ` • ${char.rank}` : ''}

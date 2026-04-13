@@ -152,12 +152,9 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const day = String(now.getDate()).padStart(2, '0');
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const year = String(now.getFullYear());
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
-      setCurrentTimestamp(`${day}.${month}.${year} ${hours}:${minutes}`);
+      setCurrentTimestamp(`${hours}:${minutes}`);
     };
     updateTime();
     const interval = window.setInterval(updateTime, 30000);
@@ -965,7 +962,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
               </span>
             </div>
             <div className="absolute inset-x-0 text-center pointer-events-none">
-              <span className="text-gray-500 text-xs font-mono tracking-wider">{currentTimestamp ? `2009 // ${currentTimestamp.split(' ')[0]} ${currentTimestamp.split(' ')[1]}` : '2009 // --.-- --:--'}</span>
+              <span className="text-gray-500 text-xs font-mono tracking-wider">{currentTimestamp || '--:--'}</span>
             </div>
             <div className="flex items-center gap-2 relative z-10">
               {pdaMode === 'menu' && (
