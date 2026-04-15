@@ -1,6 +1,8 @@
 // Discord OAuth2 verification - полностью на фронтенде
 // Пользователь авторизуется через Discord popup, проверяем членство в сервере
 
+import { saveDiscordToken } from './discordPeriodicCheck';
+
 // Хардкодим переменные для гарантии работы на Vercel
 const DISCORD_CLIENT_ID = '1493292269011210352';
 const DISCORD_SERVER_ID = '1000026315476455445';
@@ -24,8 +26,7 @@ function openDiscordAuth(): Promise<string | null> {
     }
 
     const scope = 'identify guilds';
-    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(scope)}`;
-
+  const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(scope)}&prompt=consent`;
     const width = 500;
     const height = 600;
     const left = window.screenX + (window.innerWidth - width) / 2;
@@ -82,6 +83,8 @@ export async function verifyDiscordMembership(): Promise<{ success: boolean; use
 
   const isMember = await checkGuildMembership(accessToken);
   if (!isMember) return { success: false };
+
+  saveDiscordToken(accessToken);
 
   // Получаем инфо о пользователе
   try {

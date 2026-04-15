@@ -87,6 +87,7 @@ export default function App() {
   const [discordChecking, setDiscordChecking] = useState(true);
   const [discordVerified, setDiscordVerified] = useState(false);
   const [discordError, setDiscordError] = useState(false);
+  const [discordAccessToken, setDiscordAccessToken] = useState<string | null>(() => getDiscordToken());
 
   // Auto-verify Discord on site load
   useEffect(() => {
@@ -124,12 +125,15 @@ export default function App() {
   useEffect(() => {
     if (!isDiscordConfigured() || !discordVerified) return;
 
-    const stopCheck = startDiscordPeriodicCheck(() => {
-      // Если пользователь больше не на сервере, закрываем доступ
-      setDiscordVerified(false);
-      setDiscordError(true);
-      try { localStorage.removeItem('srpit_discord_verified'); } catch {}
-    });
+    const stopCheck = startDiscordPeriodicCheck(
+      () => {
+        // Если пользователь больше не на сервере, закрываем доступ
+        setDiscordVerified(false);
+        setDiscordError(true);
+        try { localStorage.removeItem('srpit_discord_verified'); } catch {}
+      },
+      discordAccessToken
+    );
 
     return stopCheck;
   }, [discordVerified]);
@@ -556,15 +560,14 @@ export default function App() {
               setDiscordChecking(true);
               verifyDiscordMembership().then((result) => {
                 setDiscordChecking(false);
-                if (result.success) {
-                  setDiscordVerified(true);
+                if (result.success && result.accessToken) {
                   try {
                     localStorage.setItem('srpit_discord_verified', 'true');
-                    if (result.accessToken) {
-                      localStorage.setItem('srpit_discord_token', result.accessToken);
-                      localStorage.setItem('srpit_discord_token_timestamp', String(Date.now()));
-                    }
+                    localStorage.setItem('srpit_discord_token', result.accessToken);
+                    localStorage.setItem('srpit_discord_token_timestamp', String(Date.now()));
                   } catch {}
+                  setDiscordAccessToken(result.accessToken);
+                  setDiscordVerified(true);
                 } else {
                   setDiscordError(true);
                 }

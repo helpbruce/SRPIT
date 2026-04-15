@@ -57,11 +57,10 @@ export function clearDiscordToken(): void {
 }
 
 /**
- * Проверяет членство пользователя в Discord сервере используя сохранённый токен.
+ * Проверяет членство пользователя в Discord сервере по заданному токену.
  * @returns true если пользователь всё ещё участник сервера
  */
-export async function checkDiscordMembershipWithToken(): Promise<boolean> {
-  const token = getDiscordToken();
+async function checkDiscordMembership(token: string | null): Promise<boolean> {
   if (!token) return false;
 
   try {
@@ -70,8 +69,6 @@ export async function checkDiscordMembershipWithToken(): Promise<boolean> {
     });
 
     if (!response.ok) {
-      // Токен протух или невалиден
-      clearDiscordToken();
       return false;
     }
 
@@ -83,26 +80,45 @@ export async function checkDiscordMembershipWithToken(): Promise<boolean> {
 }
 
 /**
+ * Проверяет членство пользователя в Discord сервере используя сохранённый токен.
+ * @returns true если пользователь всё ещё участник сервера
+ */
+export async function checkDiscordMembershipWithToken(): Promise<boolean> {
+  const token = getDiscordToken();
+  if (!token) return false;
+
+  const isMember = await checkDiscordMembership(token);
+  if (!isMember) {
+    // Токен протух или невалиден
+    clearDiscordToken();
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Запускает периодическую проверку Discord membership.
  * @param onMemberLeft - callback вызывается когда пользователь больше не участник сервера
+ * @param token - необязательный свежий access token
  * @returns функция для остановки проверки
  */
 export function startDiscordPeriodicCheck(
-  onMemberLeft: () => void
+  onMemberLeft: () => void,
+  token: string | null = null
 ): () => void {
-  // Первая проверка сразу
-  checkDiscordMembershipWithToken().then((isMember) => {
+  const check = async () => {
+    const isMember = token ? await checkDiscordMembership(token) : await checkDiscordMembershipWithToken();
     if (!isMember) {
       onMemberLeft();
     }
-  });
+  };
+
+  // Первая проверка сразу
+  check();
 
   const intervalId = setInterval(() => {
-    checkDiscordMembershipWithToken().then((isMember) => {
-      if (!isMember) {
-        onMemberLeft();
-      }
-    });
+    check();
   }, CHECK_INTERVAL);
 
   return () => clearInterval(intervalId);

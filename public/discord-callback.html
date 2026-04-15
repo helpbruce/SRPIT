@@ -8,14 +8,18 @@
   <p>Авторизация Discord...</p>
   <script>
     const hash = window.location.hash.substring(1);
-    const params = new URLSearchParams(hash);
+    const search = window.location.search.substring(1);
+    const params = new URLSearchParams(hash || search);
     const accessToken = params.get('access_token');
 
     if (accessToken) {
-      window.opener.postMessage({
-        type: 'discord-auth-success',
-        accessToken: accessToken
-      }, window.location.origin);
+      if (window.opener) {
+        window.opener.postMessage({
+          type: 'discord-auth-success',
+          accessToken: accessToken
+        }, window.location.origin);
+      }
+      window.close();
     } else {
       window.close();
     }
