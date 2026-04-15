@@ -14,7 +14,7 @@ import { isLimitExceededError, markLimitExceeded, shouldRetryFetch, clearLimitFl
 import { LimitWarning } from '../shared/ui/LimitWarning';
 import { User } from '@supabase/supabase-js';
 import { verifyDiscordMembership, isDiscordConfigured } from '../features/pda/discordAuth';
-import { startDiscordPeriodicCheck } from '../features/pda/discordPeriodicCheck';
+import { startDiscordPeriodicCheck, checkDiscordMembershipWithToken, getDiscordToken } from '../features/pda/discordPeriodicCheck';
 
 // TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -95,20 +95,29 @@ export default function App() {
       setDiscordVerified(true);
       return;
     }
+
     if (localStorage.getItem('srpit_discord_verified') === 'true') {
       setDiscordChecking(false);
       setDiscordVerified(true);
       return;
     }
-    verifyDiscordMembership().then((result) => {
-      setDiscordChecking(false);
-      if (result.success) {
-        setDiscordVerified(true);
-        try { localStorage.setItem('srpit_discord_verified', 'true'); } catch {}
-      } else {
-        setDiscordError(true);
-      }
-    });
+
+    const token = getDiscordToken();
+    if (token) {
+      checkDiscordMembershipWithToken().then((isMember) => {
+        setDiscordChecking(false);
+        if (isMember) {
+          setDiscordVerified(true);
+          try { localStorage.setItem('srpit_discord_verified', 'true'); } catch {}
+        } else {
+          setDiscordError(true);
+        }
+      });
+      return;
+    }
+
+    setDiscordChecking(false);
+    setDiscordError(true);
   }, []);
 
   // Периодическая проверка Discord membership для доступа к сайту
@@ -549,7 +558,13 @@ export default function App() {
                 setDiscordChecking(false);
                 if (result.success) {
                   setDiscordVerified(true);
-                  try { localStorage.setItem('srpit_discord_verified', 'true'); } catch {}
+                  try {
+                    localStorage.setItem('srpit_discord_verified', 'true');
+                    if (result.accessToken) {
+                      localStorage.setItem('srpit_discord_token', result.accessToken);
+                      localStorage.setItem('srpit_discord_token_timestamp', String(Date.now()));
+                    }
+                  } catch {}
                 } else {
                   setDiscordError(true);
                 }

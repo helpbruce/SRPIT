@@ -76,7 +76,7 @@ async function checkGuildMembership(accessToken: string): Promise<boolean> {
 }
 
 // Главная функция: открывает Discord OAuth и проверяет членство
-export async function verifyDiscordMembership(): Promise<{ success: boolean; user?: DiscordUser }> {
+export async function verifyDiscordMembership(): Promise<{ success: boolean; user?: DiscordUser; accessToken?: string }> {
   const accessToken = await openDiscordAuth();
   if (!accessToken) return { success: false };
 
@@ -90,13 +90,13 @@ export async function verifyDiscordMembership(): Promise<{ success: boolean; use
     });
     if (response.ok) {
       const user = await response.json();
-      return { success: true, user };
+      return { success: true, user, accessToken };
     }
   } catch {
     // ignore
   }
 
-  return { success: true };
+  return { success: true, accessToken };
 }
 
 // Проверяет, настроен ли Discord (есть ли Client ID и Server ID)
