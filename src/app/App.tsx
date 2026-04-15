@@ -97,12 +97,6 @@ export default function App() {
       return;
     }
 
-    if (localStorage.getItem('srpit_discord_verified') === 'true') {
-      setDiscordChecking(false);
-      setDiscordVerified(true);
-      return;
-    }
-
     const token = getDiscordToken();
     if (token) {
       checkDiscordMembershipWithToken().then((isMember) => {
