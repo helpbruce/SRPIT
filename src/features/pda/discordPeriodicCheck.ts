@@ -4,9 +4,7 @@
  * При неудачной проверке вызывает onMemberLeft callback.
  */
 
-const DISCORD_CLIENT_ID = '1493292269011210352';
 const DISCORD_SERVER_ID = '1000026315476455445';
-const REDIRECT_URI = window.location.origin + '/discord-callback.html';
 
 // Интервал проверки: 10 минут (оптимизация для снижения нагрузки на Supabase)
 export const CHECK_INTERVAL = 10 * 60 * 1000;
@@ -121,47 +119,3 @@ export function startDiscordPeriodicCheck(
   return () => clearInterval(intervalId);
 }
 
-/**
- * Открывает Discord OAuth popup и возвращает access token
- */
-export function openDiscordAuthPopup(): Promise<string | null> {
-  return new Promise((resolve) => {
-    if (!DISCORD_CLIENT_ID) {
-      resolve(null);
-      return;
-    }
-
-    const scope = 'identify guilds';
-    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(scope)}`;
-
-    const width = 500;
-    const height = 600;
-    const left = window.screenX + (window.innerWidth - width) / 2;
-    const top = window.screenY + (window.innerHeight - height) / 2;
-
-    const popup = window.open(authUrl, 'discord-auth', `width=${width},height=${height},left=${left},top=${top}`);
-
-    if (!popup) {
-      resolve(null);
-      return;
-    }
-
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed);
-        resolve(null);
-      }
-    }, 500);
-
-    const handler = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === 'discord-auth-success') {
-        clearInterval(checkClosed);
-        window.removeEventListener('message', handler);
-        popup.close();
-        resolve(event.data.accessToken as string);
-      }
-    };
-    window.addEventListener('message', handler);
-  });
-}

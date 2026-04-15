@@ -53,16 +53,3 @@ create table if not exists bestiary_entries (
   updated_at timestamptz not null default now()
 );
 
--- Map markers and drawings (MapModal)
-create table if not exists map_markers (
-  id uuid primary key default gen_random_uuid(),
-  marker jsonb not null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists map_drawings (
-  id uuid primary key default gen_random_uuid(),
-  path jsonb not null,
-  created_at timestamptz not null default now()
-);
-

@@ -291,42 +291,7 @@ CREATE POLICY "Anyone can delete bestiary_entries" ON bestiary_entries
   FOR DELETE USING (true);
 
 -- ============================================
--- 9. Карта — маркеры и рисунки
--- ============================================
-CREATE TABLE IF NOT EXISTS map_markers (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  marker JSONB NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE map_markers ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Anyone can read map_markers" ON map_markers;
-CREATE POLICY "Anyone can read map_markers" ON map_markers
-  FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Anyone can insert map_markers" ON map_markers;
-CREATE POLICY "Anyone can insert map_markers" ON map_markers
-  FOR INSERT WITH CHECK (true);
-
-CREATE TABLE IF NOT EXISTS map_drawings (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  path JSONB NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE map_drawings ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Anyone can read map_drawings" ON map_drawings;
-CREATE POLICY "Anyone can read map_drawings" ON map_drawings
-  FOR SELECT USING (true);
-
-DROP POLICY IF EXISTS "Anyone can insert map_drawings" ON map_drawings;
-CREATE POLICY "Anyone can insert map_drawings" ON map_drawings
-  FOR INSERT WITH CHECK (true);
-
--- ============================================
--- 10. Realtime publication
+-- 9. Realtime publication
 -- ============================================
 DO $$
 BEGIN
@@ -358,14 +323,6 @@ BEGIN
     -- usb_files
     IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'usb_files') THEN
       ALTER PUBLICATION supabase_realtime ADD TABLE usb_files;
-    END IF;
-    -- map_markers
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'map_markers') THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE map_markers;
-    END IF;
-    -- map_drawings
-    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'map_drawings') THEN
-      ALTER PUBLICATION supabase_realtime ADD TABLE map_drawings;
     END IF;
   END IF;
 END $$;
