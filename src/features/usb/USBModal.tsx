@@ -3,9 +3,10 @@ import { ChevronLeft, X } from 'lucide-react';
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { debounce, deduplicateLoader } from '../../shared/lib/realtimeUtils';
+import { isLimitExceededError, markLimitExceeded, shouldRetryFetch } from '../../shared/lib/limitUtils';
 
-// TTL для кэша: 24 часа
-const CACHE_TTL = 24 * 60 * 60 * 1000;
+// TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 interface USBFile {
   id?: string;
@@ -166,23 +167,30 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
     []
   );
 
-  // Load USB files from Supabase + кеш + realtime с debounce
+  // Load USB files from Supabase + кеш + realtime с debounce (offline-first)
   useEffect(() => {
     if (!isOpen) return;
 
     let isMounted = true;
 
-    // Показываем кэшированные данные сразу, только если их еще нет
-    if (!isLoadedRef.current && !usbFiles.photo.length && !usbFiles.video.length && !usbFiles.audio.length) {
-      const cached = CacheManager.get<USBFiles>('usb_files');
-      if (cached) {
-        setUsbFiles(cached);
-        isLoadedRef.current = true;
+    // Offline-first: показываем кэш сразу
+    const cached = CacheManager.get<USBFiles>('usb_files');
+    if (cached) {
+      setUsbFiles(cached);
+      isLoadedRef.current = true;
+      setShowLoading(false);
+    }
+
+    // Если лимиты превышены — не делаем запросы к Supabase
+    if (!shouldRetryFetch()) {
+      console.log('[USB] ⏭️ Пропускаем загрузку — лимиты Supabase превышены');
+      if (!cached) {
+        setShowLoading(false);
       }
+      return;
     }
 
     // Если нет кэша, показываем спиннер
-    const cached = CacheManager.get<USBFiles>('usb_files');
     if (!cached && !isLoadedRef.current) {
       setShowLoading(true);
       setLoadingText('ЗАГРУЗКА USB...');
@@ -191,18 +199,34 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
     // Загружаем из Supabase асинхронно
     loadUSBFilesFromSupabase().then(next => {
       if (!isMounted) return;
-      setUsbFiles(next);
-      CacheManager.set('usb_files', next, CACHE_TTL);
+      if (next.photo.length || next.video.length || next.audio.length) {
+        setUsbFiles(next);
+        CacheManager.set('usb_files', next, CACHE_TTL);
+      }
+      setShowLoading(false);
+      isLoadedRef.current = true;
+    }).catch(err => {
+      if (isLimitExceededError(err)) {
+        console.warn('[USB] ⚠️ Превышены лимиты Supabase');
+        markLimitExceeded();
+      }
       setShowLoading(false);
       isLoadedRef.current = true;
     });
 
     // Realtime — обновляет данные ТОЛЬКО при изменениях в БД
     const debouncedLoad = debounce(async () => {
-      const next = await loadUSBFilesFromSupabase();
-      if (isMounted) {
-        setUsbFiles(next);
-        CacheManager.set('usb_files', next, CACHE_TTL);
+      if (!shouldRetryFetch()) return;
+      try {
+        const next = await loadUSBFilesFromSupabase();
+        if (isMounted) {
+          setUsbFiles(next);
+          CacheManager.set('usb_files', next, CACHE_TTL);
+        }
+      } catch (err) {
+        if (isLimitExceededError(err)) {
+          markLimitExceeded();
+        }
       }
     }, 800);
 

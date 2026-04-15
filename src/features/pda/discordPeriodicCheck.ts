@@ -1,0 +1,154 @@
+/**
+ * Периодическая проверка членства в Discord сервере.
+ * Проверяет каждые CHECK_INTERVAL миллисекунд.
+ * При неудачной проверке вызывает onMemberLeft callback.
+ */
+
+const DISCORD_CLIENT_ID = '1493292269011210352';
+const DISCORD_SERVER_ID = '1000026315476455445';
+const REDIRECT_URI = window.location.origin + '/discord-callback.html';
+
+// Интервал проверки: 10 минут (оптимизация для снижения нагрузки на Supabase)
+export const CHECK_INTERVAL = 10 * 60 * 1000;
+
+const DISCORD_TOKEN_KEY = 'srpit_discord_token';
+const DISCORD_TOKEN_TIMESTAMP_KEY = 'srpit_discord_token_timestamp';
+
+// Токен хранится 30 минут, потом нужно переавторизоваться
+const TOKEN_TTL = 30 * 60 * 1000;
+
+/**
+ * Сохраняет Discord access token
+ */
+export function saveDiscordToken(token: string): void {
+  try {
+    localStorage.setItem(DISCORD_TOKEN_KEY, token);
+    localStorage.setItem(DISCORD_TOKEN_TIMESTAMP_KEY, String(Date.now()));
+  } catch {}
+}
+
+/**
+ * Получает сохранённый токен (если он ещё валиден)
+ */
+export function getDiscordToken(): string | null {
+  try {
+    const token = localStorage.getItem(DISCORD_TOKEN_KEY);
+    const timestamp = localStorage.getItem(DISCORD_TOKEN_TIMESTAMP_KEY);
+    if (!token || !timestamp) return null;
+    const age = Date.now() - parseInt(timestamp, 10);
+    if (age > TOKEN_TTL) {
+      clearDiscordToken();
+      return null;
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Очищает сохранённый токен
+ */
+export function clearDiscordToken(): void {
+  try {
+    localStorage.removeItem(DISCORD_TOKEN_KEY);
+    localStorage.removeItem(DISCORD_TOKEN_TIMESTAMP_KEY);
+  } catch {}
+}
+
+/**
+ * Проверяет членство пользователя в Discord сервере используя сохранённый токен.
+ * @returns true если пользователь всё ещё участник сервера
+ */
+export async function checkDiscordMembershipWithToken(): Promise<boolean> {
+  const token = getDiscordToken();
+  if (!token) return false;
+
+  try {
+    const response = await fetch('https://discord.com/api/v10/users/@me/guilds', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      // Токен протух или невалиден
+      clearDiscordToken();
+      return false;
+    }
+
+    const guilds = await response.json();
+    return guilds.some((g: any) => g.id === DISCORD_SERVER_ID);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Запускает периодическую проверку Discord membership.
+ * @param onMemberLeft - callback вызывается когда пользователь больше не участник сервера
+ * @returns функция для остановки проверки
+ */
+export function startDiscordPeriodicCheck(
+  onMemberLeft: () => void
+): () => void {
+  // Первая проверка сразу
+  checkDiscordMembershipWithToken().then((isMember) => {
+    if (!isMember) {
+      onMemberLeft();
+    }
+  });
+
+  const intervalId = setInterval(() => {
+    checkDiscordMembershipWithToken().then((isMember) => {
+      if (!isMember) {
+        onMemberLeft();
+      }
+    });
+  }, CHECK_INTERVAL);
+
+  return () => clearInterval(intervalId);
+}
+
+/**
+ * Открывает Discord OAuth popup и возвращает access token
+ */
+export function openDiscordAuthPopup(): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!DISCORD_CLIENT_ID) {
+      resolve(null);
+      return;
+    }
+
+    const scope = 'identify guilds';
+    const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(scope)}`;
+
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.innerWidth - width) / 2;
+    const top = window.screenY + (window.innerHeight - height) / 2;
+
+    const popup = window.open(authUrl, 'discord-auth', `width=${width},height=${height},left=${left},top=${top}`);
+
+    if (!popup) {
+      resolve(null);
+      return;
+    }
+
+    const checkClosed = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(checkClosed);
+        resolve(null);
+      }
+    }, 500);
+
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'discord-auth-success') {
+        clearInterval(checkClosed);
+        window.removeEventListener('message', handler);
+        popup.close();
+        resolve(event.data.accessToken as string);
+      }
+    };
+    window.addEventListener('message', handler);
+  });
+}

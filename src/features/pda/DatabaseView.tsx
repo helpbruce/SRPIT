@@ -3,8 +3,8 @@ import { Search, Plus, Edit2, Trash2, ChevronLeft, ChevronDown, ChevronUp, List,
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 
-// TTL для кэша: 24 часа
-const CACHE_TTL = 24 * 60 * 60 * 1000;
+// TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 interface Character {
   id: string;

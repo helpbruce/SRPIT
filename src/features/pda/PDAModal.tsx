@@ -4,10 +4,12 @@ import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { CryptoEncryptor } from '../crypto/CryptoEncryptor';
 import { debounce, deduplicateLoader } from '../../shared/lib/realtimeUtils';
+import { isLimitExceededError, markLimitExceeded, shouldRetryFetch } from '../../shared/lib/limitUtils';
 import { DatabaseView } from './DatabaseView';
+import { validateAndCleanupSession, saveSessionVersion, clearPdaSession } from './sessionManager';
 
-// TTL для кэша: 24 часа
-const CACHE_TTL = 24 * 60 * 60 * 1000;
+// TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 class PDAModalErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -229,9 +231,19 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     };
   }, [isOpen, onClose, isEditing, isEditingBestiary, selectedCharacter, selectedEntry, pdaMode]);
 
-  // Local auth init on open
+  // Local auth init on open — с проверкой версии сессии
   useEffect(() => {
     if (!isOpen) return;
+
+    // Проверяем версию сессии — если устарела, разлогиниваем
+    if (!validateAndCleanupSession()) {
+      setCurrentLogin(null);
+      setCurrentUserRole('user');
+      setCanAccessAbd(false);
+      setShowAuthModal(true);
+      return;
+    }
+
     try {
       const saved = localStorage.getItem('pda_login');
       const savedRole = localStorage.getItem('pda_user_role') as 'user' | 'admin' | null;
@@ -312,31 +324,54 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
     []
   );
 
-  // Load data from Supabase + кеш + realtime с debounce
+  // Load data from Supabase + кеш + realtime с debounce (offline-first)
   useEffect(() => {
     if (!isOpen) return;
 
     let isMounted = true;
 
+    // Если лимиты превышены — не делаем запросы к Supabase
+    if (!shouldRetryFetch()) {
+      console.log('[PDA] ⏭️ Пропускаем загрузку — лимиты Supabase превышены');
+      setShowLoadingSpinner(false);
+      return;
+    }
+
     // Загружаем из Supabase асинхронно
     loadDataFromSupabase().then(({ chars, bestiary }) => {
       if (!isMounted) return;
-      setCharacters(chars);
-      setBestiaryEntries(bestiary);
-      CacheManager.set('pda_characters', chars, CACHE_TTL);
-      CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+      if (chars.length || bestiary.length) {
+        setCharacters(chars);
+        setBestiaryEntries(bestiary);
+        CacheManager.set('pda_characters', chars, CACHE_TTL);
+        CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+      }
+      setShowLoadingSpinner(false);
+      isLoadedRef.current = true;
+    }).catch(err => {
+      if (isLimitExceededError(err)) {
+        console.warn('[PDA] ⚠️ Превышены лимиты Supabase');
+        markLimitExceeded();
+      }
       setShowLoadingSpinner(false);
       isLoadedRef.current = true;
     });
 
     // Realtime с debounce — 800ms для лучшей производительности
     const debouncedLoad = debounce(async () => {
-      const { chars, bestiary } = await loadDataFromSupabase();
-      if (isMounted) {
-        setCharacters(chars);
-        setBestiaryEntries(bestiary);
-        CacheManager.set('pda_characters', chars, CACHE_TTL);
-        CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+      if (!shouldRetryFetch()) return;
+      try {
+        const { chars, bestiary } = await loadDataFromSupabase();
+        if (isMounted) {
+          setCharacters(chars);
+          setBestiaryEntries(bestiary);
+          CacheManager.set('pda_characters', chars, CACHE_TTL);
+          CacheManager.set('bestiary_entries', bestiary, CACHE_TTL);
+        }
+      } catch (err) {
+        if (isLimitExceededError(err)) {
+          markLimitExceeded();
+        }
       }
     }, 800);
 
@@ -404,22 +439,42 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
 
   useEffect(() => {
     if (!isOpen || !supabase || !canAccessAbd) return;
-    
+
     let isMounted = true;
     const cached = CacheManager.get<Character[]>('secret_characters');
     if (cached && isMounted) setSecretCharacters(cached);
 
+    // Если лимиты превышены — не делаем запросы
+    if (!shouldRetryFetch()) {
+      console.log('[PDA/Secret] ⏭️ Пропускаем загрузку — лимиты Supabase превышены');
+      return;
+    }
+
     loadSecretCharactersFromSupabase().then(data => {
       if (!isMounted) return;
-      setSecretCharacters(data);
-      CacheManager.set('secret_characters', data, CACHE_TTL);
+      if (data.length) {
+        setSecretCharacters(data);
+        CacheManager.set('secret_characters', data, CACHE_TTL);
+      }
+    }).catch(err => {
+      if (isLimitExceededError(err)) {
+        console.warn('[PDA/Secret] ⚠️ Превышены лимиты Supabase');
+        markLimitExceeded();
+      }
     });
 
     const debouncedLoad = debounce(async () => {
-      const data = await loadSecretCharactersFromSupabase();
-      if (isMounted) {
-        setSecretCharacters(data);
-        CacheManager.set('secret_characters', data, CACHE_TTL);
+      if (!shouldRetryFetch()) return;
+      try {
+        const data = await loadSecretCharactersFromSupabase();
+        if (isMounted) {
+          setSecretCharacters(data);
+          CacheManager.set('secret_characters', data, CACHE_TTL);
+        }
+      } catch (err) {
+        if (isLimitExceededError(err)) {
+          markLimitExceeded();
+        }
       }
     }, 800);
 
@@ -896,6 +951,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
         localStorage.setItem('pda_login', authEmail);
         localStorage.setItem('pda_user_role', userRole);
         localStorage.setItem('pda_can_access_abd', String(hasAbd));
+        saveSessionVersion();
       } catch {}
       setCurrentLogin(authEmail);
       setCurrentUserRole(userRole);
@@ -917,6 +973,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
           localStorage.setItem('pda_login', authEmail);
           localStorage.setItem('pda_user_role', userRole);
           localStorage.setItem('pda_can_access_abd', String(hasAbd));
+          saveSessionVersion();
         } catch {}
         setCurrentLogin(authEmail);
         setCurrentUserRole(userRole);
@@ -954,9 +1011,10 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
       return;
     }
     const userRole: 'admin' | 'user' = authEmail === 'admin' ? 'admin' : 'user';
-    try { 
+    try {
       localStorage.setItem('pda_login', authEmail);
       localStorage.setItem('pda_user_role', userRole);
+      saveSessionVersion();
     } catch {}
     setCurrentLogin(authEmail);
     setCurrentUserRole(userRole);
@@ -964,11 +1022,7 @@ const getTypeIcon = (type: BestiaryEntry['type']) => {
   };
 
   const handleLogout = async () => {
-    try {
-      localStorage.removeItem('pda_login');
-      localStorage.removeItem('pda_user_role');
-      localStorage.removeItem('pda_can_access_abd');
-    } catch {}
+    clearPdaSession();
     setCurrentLogin(null);
     setCurrentUserRole('user');
     setCanAccessAbd(false);

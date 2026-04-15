@@ -10,11 +10,14 @@ const FolderViewer = lazy(() => import('../features/folder/FolderViewer').then(m
 import { supabase } from '../shared/lib/supabaseClient';
 import { CacheManager } from '../shared/lib/cache';
 import { debounce } from '../shared/lib/realtimeUtils';
+import { isLimitExceededError, markLimitExceeded, shouldRetryFetch, clearLimitFlag } from '../shared/lib/limitUtils';
+import { LimitWarning } from '../shared/ui/LimitWarning';
 import { User } from '@supabase/supabase-js';
 import { verifyDiscordMembership, isDiscordConfigured } from '../features/pda/discordAuth';
+import { startDiscordPeriodicCheck } from '../features/pda/discordPeriodicCheck';
 
-// TTL для кэша: 24 часа
-const CACHE_TTL = 24 * 60 * 60 * 1000;
+// TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 // Определяем тип документа по URL
 function getDocType(url: string): 'image' | 'pdf' | 'video' | 'audio' {
@@ -66,6 +69,11 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState(false);
 
+  // Уведомление о превышении лимитов
+  const [showLimitWarning, setShowLimitWarning] = useState(() => {
+    return !shouldRetryFetch();
+  });
+
   // Admin status from PDA login
   const [isAdmin, setIsAdmin] = useState(() => {
     try {
@@ -102,6 +110,20 @@ export default function App() {
       }
     });
   }, []);
+
+  // Периодическая проверка Discord membership для доступа к сайту
+  useEffect(() => {
+    if (!isDiscordConfigured() || !discordVerified) return;
+
+    const stopCheck = startDiscordPeriodicCheck(() => {
+      // Если пользователь больше не на сервере, закрываем доступ
+      setDiscordVerified(false);
+      setDiscordError(true);
+      try { localStorage.removeItem('srpit_discord_verified'); } catch {}
+    });
+
+    return stopCheck;
+  }, [discordVerified]);
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -187,99 +209,133 @@ export default function App() {
     };
   }, []);
 
-  // Предзагрузка данных в кэш при старте приложения (фоновая загрузка)
-  useEffect(() => {
+  // Предзагрузка данных в кэш при старте приложения (offline-first режим)
+  const preloadData = useCallback(async (forceRefresh = false) => {
     if (!supabase) return;
 
-    const preloadData = async () => {
-      console.log('[Preload] Начинаем загрузку данных в кэш...');
-      const startTime = Date.now();
-      try {
-        // Загружаем USB файлы
-        const { data: usbData, error: usbError } = await supabase
-          .from('usb_files')
-          .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
-          .order('created_at', { ascending: true });
+    // Если не форсируем и лимиты превышены — не делаем запросы
+    if (!forceRefresh && !shouldRetryFetch()) {
+      console.log('[Preload] ⏭️ Пропускаем загрузку — лимиты Supabase превышены, используем кэш');
+      return;
+    }
 
-        if (!usbError && usbData) {
-          const usbFiles: { photo: any[], video: any[], audio: any[] } = { photo: [], video: [], audio: [] };
-          for (const row of usbData) {
-            const type = row.type as 'photo' | 'video' | 'audio';
-            usbFiles[type].push({
-              id: row.id as string,
-              url: row.url as string,
-              name: row.name as string,
-              createdAt: (row.created_at_label as string) ?? '',
-              is_protected: (row.is_protected as boolean) ?? false,
-              password_hash: (row.password_hash as string) ?? null,
-              protected_hint: (row.protected_hint as string) ?? null,
-            });
-          }
-          CacheManager.set('usb_files', usbFiles, CACHE_TTL);
-          console.log('[Preload] ✓ USB файлы загружены в кэш:', usbFiles.photo.length + usbFiles.video.length + usbFiles.audio.length, 'файлов');
-        } else {
-          console.warn('[Preload] ✗ Ошибка загрузки USB:', usbError);
-        }
+    // Если форсируем — сбрасываем флаг лимитов
+    if (forceRefresh) {
+      clearLimitFlag();
+      setShowLimitWarning(false);
+    }
 
-        // Загружаем персонажей PDA
-        const { data: charsData, error: charsError } = await supabase
-          .from('pda_characters')
-          .select('*')
-          .order('updated_at', { ascending: true });
+    console.log('[Preload] Начинаем загрузку данных в кэш...');
+    const startTime = Date.now();
+    try {
+      // Загружаем USB файлы
+      const { data: usbData, error: usbError } = await supabase
+        .from('usb_files')
+        .select('id, type, url, name, created_at_label, is_protected, password_hash, protected_hint')
+        .order('created_at', { ascending: true });
 
-        if (!charsError && charsData) {
-          const characters = charsData.map((row: any) => ({
-            id: row.id,
-            photo: row.photo ?? '/icons/nodata.png',
-            name: row.name ?? '',
-            birthDate: row.birthdate ?? '',
-            faction: row.faction ?? '',
-            rank: row.rank ?? '',
-            status: row.status ?? 'Неизвестен',
-            shortInfo: row.shortinfo ?? '',
-            fullInfo: row.fullinfo ?? '',
-            notes: row.notes ?? '',
-            tasks: (row.tasks ?? []) as Task[],
-            caseNumber: row.casenumber ?? '',
-          }));
-          CacheManager.set('pda_characters', characters, CACHE_TTL);
-          console.log('[Preload] ✓ Персонажи загружены в кэш:', characters.length);
-        } else {
-          console.warn('[Preload] ✗ Ошибка загрузки персонажей:', charsError);
-        }
-
-        // Загружаем бестиарий
-        const { data: bestiaryData, error: bestiaryError } = await supabase
-          .from('bestiary_entries')
-          .select('*')
-          .order('updated_at', { ascending: true });
-
-        if (!bestiaryError && bestiaryData) {
-          const bestiaryEntries = bestiaryData.map((row: any) => ({
-            id: row.id,
-            type: row.type,
-            name: row.name,
-            photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
-            shortInfo: row.short_info ?? '',
-            fullInfo: row.full_info ?? '',
-            dangerLevel: row.danger_level ?? 'средний',
-            anomalyNames: row.anomaly_names ?? [],
-          }));
-          CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
-          console.log('[Preload] ✓ Бестиарий загружен в кэш:', bestiaryEntries.length);
-        } else {
-          console.warn('[Preload] ✗ Ошибка загрузки бестиария:', bestiaryError);
-        }
-
-        const elapsed = Date.now() - startTime;
-        console.log(`[Preload] ✓ Завершено за ${elapsed}мс`);
-      } catch (e) {
-        console.warn('[Preload] ✗ Ошибка предзагрузки данных:', e);
+      if (usbError && isLimitExceededError(usbError)) {
+        console.warn('[Preload] ⚠️ Превышены лимиты Supabase, используем кэш');
+        markLimitExceeded();
+        setShowLimitWarning(true);
+        return;
       }
-    };
 
+      if (!usbError && usbData) {
+        const usbFiles: { photo: any[], video: any[], audio: any[] } = { photo: [], video: [], audio: [] };
+        for (const row of usbData) {
+          const type = row.type as 'photo' | 'video' | 'audio';
+          usbFiles[type].push({
+            id: row.id as string,
+            url: row.url as string,
+            name: row.name as string,
+            createdAt: (row.created_at_label as string) ?? '',
+            is_protected: (row.is_protected as boolean) ?? false,
+            password_hash: (row.password_hash as string) ?? null,
+            protected_hint: (row.protected_hint as string) ?? null,
+          });
+        }
+        CacheManager.set('usb_files', usbFiles, CACHE_TTL);
+        console.log('[Preload] ✓ USB файлы загружены в кэш:', usbFiles.photo.length + usbFiles.video.length + usbFiles.audio.length, 'файлов');
+      } else {
+        console.warn('[Preload] ✗ Ошибка загрузки USB:', usbError);
+      }
+
+      // Загружаем персонажей PDA
+      const { data: charsData, error: charsError } = await supabase
+        .from('pda_characters')
+        .select('*')
+        .order('updated_at', { ascending: true });
+
+      if (charsError && isLimitExceededError(charsError)) {
+        console.warn('[Preload] ⚠️ Превышены лимиты Supabase, используем кэш');
+        markLimitExceeded();
+        setShowLimitWarning(true);
+        return;
+      }
+
+      if (!charsError && charsData) {
+        const characters = charsData.map((row: any) => ({
+          id: row.id,
+          photo: row.photo ?? '/icons/nodata.png',
+          name: row.name ?? '',
+          birthDate: row.birthdate ?? '',
+          faction: row.faction ?? '',
+          rank: row.rank ?? '',
+          status: row.status ?? 'Неизвестен',
+          shortInfo: row.shortinfo ?? '',
+          fullInfo: row.fullinfo ?? '',
+          notes: row.notes ?? '',
+          tasks: (row.tasks ?? []) as Task[],
+          caseNumber: row.casenumber ?? '',
+        }));
+        CacheManager.set('pda_characters', characters, CACHE_TTL);
+        console.log('[Preload] ✓ Персонажи загружены в кэш:', characters.length);
+      } else {
+        console.warn('[Preload] ✗ Ошибка загрузки персонажей:', charsError);
+      }
+
+      // Загружаем бестиарий
+      const { data: bestiaryData, error: bestiaryError } = await supabase
+        .from('bestiary_entries')
+        .select('*')
+        .order('updated_at', { ascending: true });
+
+      if (bestiaryError && isLimitExceededError(bestiaryError)) {
+        console.warn('[Preload] ⚠️ Превышены лимиты Supabase, используем кэш');
+        markLimitExceeded();
+        setShowLimitWarning(true);
+        return;
+      }
+
+      if (!bestiaryError && bestiaryData) {
+        const bestiaryEntries = bestiaryData.map((row: any) => ({
+          id: row.id,
+          type: row.type,
+          name: row.name,
+          photos: [row.photos?.[0] ?? '/icons/nodata.png', row.photos?.[1] ?? '/icons/nodata.png'],
+          shortInfo: row.short_info ?? '',
+          fullInfo: row.full_info ?? '',
+          dangerLevel: row.danger_level ?? 'средний',
+          anomalyNames: row.anomaly_names ?? [],
+        }));
+        CacheManager.set('bestiary_entries', bestiaryEntries, CACHE_TTL);
+        console.log('[Preload] ✓ Бестиарий загружен в кэш:', bestiaryEntries.length);
+      } else {
+        console.warn('[Preload] ✗ Ошибка загрузки бестиария:', bestiaryError);
+      }
+
+      const elapsed = Date.now() - startTime;
+      console.log(`[Preload] ✓ Завершено за ${elapsed}мс`);
+    } catch (e) {
+      console.warn('[Preload] ✗ Ошибка предзагрузки данных:', e);
+    }
+  }, [supabase]);
+
+  // Вызываем preload при монтировании
+  useEffect(() => {
     preloadData();
-  }, []);
+  }, [preloadData]);
 
   useEffect(() => {
     if (!isFolderOpen) {
@@ -818,6 +874,14 @@ export default function App() {
       >
         {isMuted ? 'ЗВУК: ВЫКЛ' : 'ЗВУК: ВКЛ'}
       </button>
+
+      {/* Limit Warning */}
+      {showLimitWarning && (
+        <LimitWarning
+          onClose={() => setShowLimitWarning(false)}
+          onRefresh={() => preloadData(true)}
+        />
+      )}
     </div>
   );
 }

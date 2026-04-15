@@ -3,9 +3,10 @@ import { X, ZoomIn, ZoomOut, Hand, Pen, Eraser, Edit3, Eye } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabaseClient';
 import { CacheManager } from '../../shared/lib/cache';
 import { debounce } from '../../shared/lib/realtimeUtils';
+import { isLimitExceededError, markLimitExceeded, shouldRetryFetch } from '../../shared/lib/limitUtils';
 
-// TTL для кэша: 24 часа
-const CACHE_TTL = 24 * 60 * 60 * 1000;
+// TTL для кэша: 7 дней (оптимизация для снижения запросов к Supabase)
+const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 interface Marker {
   id: string;
@@ -104,7 +105,7 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose, editingMarker]);
 
-  // Load markers & drawings from Supabase + кеш + realtime подписка
+  // Load markers & drawings from Supabase + кеш + realtime подписка (offline-first)
   useEffect(() => {
     if (!supabase) {
       // Пробуем загрузить из кеша если Supabase не настроен
@@ -124,6 +125,12 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       if (cachedMarkers && isMounted) setMarkers(cachedMarkers);
       if (cachedDrawings && isMounted) setDrawings(cachedDrawings);
 
+      // Если лимиты превышены — не делаем запросы
+      if (!shouldRetryFetch()) {
+        console.log('[Map] ⏭️ Пропускаем загрузку — лимиты Supabase превышены');
+        return;
+      }
+
       // Затем загружаем свежие данные из Supabase
       const [markersRes, drawingsRes] = await Promise.all([
         supabase.from('map_markers').select('id, marker').order('created_at', { ascending: true }),
@@ -131,6 +138,12 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
       ]);
 
       if (!isMounted) return;
+
+      if (markersRes.error && isLimitExceededError(markersRes.error)) {
+        console.warn('[Map] ⚠️ Превышены лимиты Supabase');
+        markLimitExceeded();
+        return;
+      }
 
       if (markersRes.error) {
         console.error('Failed to load map_markers from Supabase:', markersRes.error);
@@ -141,6 +154,11 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
         }));
         setMarkers(mapped);
         CacheManager.set('map_markers', mapped, CACHE_TTL);
+      }
+
+      if (drawingsRes.error && isLimitExceededError(drawingsRes.error)) {
+        markLimitExceeded();
+        return;
       }
 
       if (drawingsRes.error) {
@@ -158,7 +176,9 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     load();
 
     // Realtime только в режиме редактирования — чтобы не ломало при просмотре
-    const debouncedLoad = debounce(load, 500);
+    const debouncedLoad = debounce(() => {
+      if (shouldRetryFetch() && editMode) load();
+    }, 500);
     const channel = supabase
       .channel('map_realtime')
       .on(
