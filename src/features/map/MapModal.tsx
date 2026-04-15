@@ -179,23 +179,27 @@ export function MapModal({ isOpen, onClose }: MapModalProps) {
     const debouncedLoad = debounce(() => {
       if (shouldRetryFetch() && editMode) load();
     }, 500);
-    const channel = supabase
-      .channel('map_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'map_markers' },
-        () => { if (editMode) debouncedLoad(); }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'map_drawings' },
-        () => { if (editMode) debouncedLoad(); }
-      )
-      .subscribe();
+
+    let channel: any = null;
+    if (supabase && shouldRetryFetch()) {
+      channel = supabase
+        .channel('map_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'map_markers' },
+          () => { if (editMode) debouncedLoad(); }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'map_drawings' },
+          () => { if (editMode) debouncedLoad(); }
+        )
+        .subscribe();
+    }
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [editMode]);
 

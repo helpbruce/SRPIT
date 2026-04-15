@@ -375,7 +375,7 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       }
     }, 800);
 
-    if (supabase) {
+    if (supabase && shouldRetryFetch()) {
       channelRef.current = supabase
         .channel('pda_realtime')
         .on(
@@ -478,14 +478,17 @@ const [shortInfoInsertedMap, setShortInfoInsertedMap] = useState({});
       }
     }, 800);
 
-    const channel = supabase
-      .channel('secret_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'secret_characters' }, debouncedLoad)
-      .subscribe();
+    let channel: any = null;
+    if (supabase && shouldRetryFetch()) {
+      channel = supabase
+        .channel('secret_realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'secret_characters' }, debouncedLoad)
+        .subscribe();
+    }
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [isOpen, canAccessAbd, loadSecretCharactersFromSupabase]);
 

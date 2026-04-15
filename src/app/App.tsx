@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 const DocumentStack = lazy(() => import('../features/folder/DocumentStack').then(m => ({ default: m.DocumentStack })));
 const USBModal = lazy(() => import('../features/usb/USBModal').then(m => ({ default: m.USBModal })));
@@ -148,9 +148,13 @@ export default function App() {
 
   // Load documents from Supabase + кеш + realtime с debounce
   useEffect(() => {
-    if (!supabase) {
-      const cached = CacheManager.get<Document[]>('documents');
-      if (cached) setDocuments(cached);
+    const cached = CacheManager.get<Document[]>('documents');
+    if (cached) setDocuments(cached);
+
+    if (!supabase) return;
+
+    if (!shouldRetryFetch()) {
+      console.log('[Documents] ⏭️ Пропускаем загрузку документов — лимиты Supabase превышены');
       return;
     }
 
@@ -185,33 +189,39 @@ export default function App() {
       }
     };
 
-    // Начальная загрузка — сначала кеш, потом Supabase
-    const cached = CacheManager.get<Document[]>('documents');
-    if (cached && isMounted) {
-      setDocuments(cached);
+    if (!cached) {
+      loadDocuments();
     }
-    loadDocuments();
 
     // Realtime с debounce — 500ms
-    const debouncedLoad = debounce(loadDocuments, 500);
-    const channel = supabase
-      .channel('documents_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'documents' },
-        debouncedLoad
-      )
-      .subscribe();
+    let channel: any = null;
+    if (shouldRetryFetch()) {
+      const debouncedLoad = debounce(loadDocuments, 500);
+      channel = supabase
+        .channel('documents_realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'documents' },
+          debouncedLoad
+        )
+        .subscribe();
+    }
 
     return () => {
       isMounted = false;
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
     };
   }, []);
 
   // Предзагрузка данных в кэш при старте приложения (offline-first режим)
   const preloadData = useCallback(async (forceRefresh = false) => {
     if (!supabase) return;
+
+    const hasCache = !!CacheManager.get('pda_characters') && !!CacheManager.get('bestiary_entries') && !!CacheManager.get('usb_files');
+    if (!forceRefresh && hasCache) {
+      console.log('[Preload] ⏭️ Все данные уже в кэше, пропускаем предзагрузку');
+      return;
+    }
 
     // Если не форсируем и лимиты превышены — не делаем запросы
     if (!forceRefresh && !shouldRetryFetch()) {

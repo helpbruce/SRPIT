@@ -230,7 +230,7 @@ export function USBModal({ isOpen, onClose, onAddFile, isMuted, isAdmin }: USBMo
       }
     }, 800);
 
-    if (supabase) {
+    if (supabase && shouldRetryFetch()) {
       channelRef.current = supabase
         .channel('usb_realtime')
         .on(
