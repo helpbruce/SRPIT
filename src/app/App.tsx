@@ -112,7 +112,6 @@ export default function App() {
     }
 
     setDiscordChecking(false);
-    setDiscordError(true);
   }, []);
 
   // Периодическая проверка Discord membership для доступа к сайту

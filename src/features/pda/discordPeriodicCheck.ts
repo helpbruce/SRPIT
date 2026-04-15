@@ -114,9 +114,6 @@ export function startDiscordPeriodicCheck(
     }
   };
 
-  // Первая проверка сразу
-  check();
-
   const intervalId = setInterval(() => {
     check();
   }, CHECK_INTERVAL);
